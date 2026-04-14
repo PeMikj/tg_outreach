@@ -1,11 +1,14 @@
+import asyncio
 import json
 import os
 import re
 import sqlite3
+import smtplib
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +78,12 @@ class Settings:
         "TG_OUTREACH_TELEGRAM_CHANNELS",
         "t.me/hrlunapark,t.me/yuniorapp,t.me/dev_connectablejobs",
     )
+    smtp_host: str = os.getenv("TG_OUTREACH_SMTP_HOST", "").strip()
+    smtp_port: int = int(os.getenv("TG_OUTREACH_SMTP_PORT", "587"))
+    smtp_username: str = os.getenv("TG_OUTREACH_SMTP_USERNAME", "").strip()
+    smtp_password: str = os.getenv("TG_OUTREACH_SMTP_PASSWORD", "").strip()
+    smtp_from_email: str = os.getenv("TG_OUTREACH_SMTP_FROM_EMAIL", "").strip()
+    smtp_starttls: bool = os.getenv("TG_OUTREACH_SMTP_STARTTLS", "true").strip().lower() != "false"
     notify_target: str = os.getenv("TG_OUTREACH_NOTIFY_TARGET", "").strip()
     dispatch_mode: str = os.getenv("TG_OUTREACH_DISPATCH_MODE", "dry_run").strip().lower()
     context_budget_tokens: int = int(os.getenv("TG_OUTREACH_CONTEXT_BUDGET_TOKENS", "3000"))
@@ -113,6 +122,7 @@ class VacancyRecord(BaseModel):
     id: str
     source_channel: str
     recruiter_handle: str | None = None
+    contact_email: str | None = None
     title: str
     status: str
     score: float
@@ -419,6 +429,8 @@ def initialize_db_schema(connection: sqlite3.Connection) -> None:
             id TEXT PRIMARY KEY,
             vacancy_id TEXT NOT NULL,
             recruiter_handle TEXT,
+            contact_channel TEXT,
+            contact_target TEXT,
             dispatch_mode TEXT NOT NULL,
             operator TEXT NOT NULL,
             outcome TEXT NOT NULL,
@@ -551,6 +563,13 @@ def initialize_db_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE vacancies ADD COLUMN context_bundle_json TEXT NOT NULL DEFAULT '{}'")
     if "approval_expires_at" not in existing_columns:
         connection.execute("ALTER TABLE vacancies ADD COLUMN approval_expires_at TEXT")
+    dispatch_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(dispatch_events)").fetchall()
+    }
+    if "contact_channel" not in dispatch_columns:
+        connection.execute("ALTER TABLE dispatch_events ADD COLUMN contact_channel TEXT")
+    if "contact_target" not in dispatch_columns:
+        connection.execute("ALTER TABLE dispatch_events ADD COLUMN contact_target TEXT")
     connection.commit()
     DB_SCHEMA_INITIALIZED = True
 
@@ -1445,13 +1464,37 @@ def extract_recruiter_handle(raw_text: str, explicit_handle: str | None) -> tupl
         match = re.search(r"(?:https?://)?t\.me/([A-Za-z0-9_]{4,64})", chunk, flags=re.IGNORECASE)
         if match:
             return normalize_handle(match.group(1)), "extracted_tme_link"
-        match = re.search(r"@([A-Za-z0-9_]{4,64})", chunk)
+        match = re.search(r"(?<![A-Za-z0-9._%+\-])@([A-Za-z0-9_]{4,64})\b", chunk)
         if match:
             return normalize_handle(match.group(1)), "extracted_at_handle"
 
     if contact_lines:
         return None, "contact_line_without_handle"
     return None, "no_contact_handle_found"
+
+
+def extract_contact_email(raw_text: str) -> tuple[str | None, str]:
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    contact_lines = [
+        line for line in lines
+        if any(marker in line.lower() for marker in ("contact", "email", "mail", "reach", "write"))
+    ]
+    search_space = contact_lines + lines[-3:]
+    for chunk in search_space:
+        match = re.search(r"\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b", chunk, flags=re.IGNORECASE)
+        if match:
+            return match.group(0).lower(), "extracted_email"
+    if contact_lines:
+        return None, "contact_line_without_email"
+    return None, "no_contact_email_found"
+
+
+def resolve_contact_channel(contact_email: str | None, recruiter_handle: str | None) -> tuple[str | None, str | None]:
+    if contact_email:
+        return "email", contact_email
+    if recruiter_handle:
+        return "telegram", recruiter_handle
+    return None, None
 
 
 def parse_vacancy(raw_text: str, recruiter_handle: str | None) -> dict[str, Any]:
@@ -1481,6 +1524,8 @@ def parse_vacancy(raw_text: str, recruiter_handle: str | None) -> dict[str, Any]
     extracted_skills = extract_skills(raw_text)
     title = simplify_title(normalize_split_item_title(raw_text, title))
     extracted_handle, contact_extraction_reason = extract_recruiter_handle(raw_text, recruiter_handle)
+    contact_email, email_extraction_reason = extract_contact_email(raw_text)
+    preferred_contact_channel, contact_target = resolve_contact_channel(contact_email, extracted_handle)
     allowed_locations = [str(value).lower() for value in CANDIDATE_PREFERENCES.get("allowed_locations", [])]
     location_allowed = True if not location or not allowed_locations else location in allowed_locations
     work_mode = "hybrid" if "hybrid" in raw_lower else ("remote" if remote else "onsite")
@@ -1499,8 +1544,13 @@ def parse_vacancy(raw_text: str, recruiter_handle: str | None) -> dict[str, Any]
         "detected_roles": detected_roles,
         "skills": extracted_skills,
         "recruiter_handle": extracted_handle,
+        "contact_email": contact_email,
+        "preferred_contact_channel": preferred_contact_channel,
+        "contact_target": contact_target,
         "contact_extraction_reason": contact_extraction_reason,
-        "contact_extraction_status": "resolved" if extracted_handle else "missing",
+        "email_extraction_reason": email_extraction_reason,
+        "contact_extraction_status": "resolved" if (extracted_handle or contact_email) else "missing",
+        "email_extraction_status": "resolved" if contact_email else "missing",
         "preview": raw_text[:500],
     }
 
@@ -1636,6 +1686,8 @@ def build_context_bundle(
         "company": structured.get("company"),
         "location": structured.get("location"),
         "recruiter_handle": structured.get("recruiter_handle"),
+        "contact_email": structured.get("contact_email"),
+        "preferred_contact_channel": structured.get("preferred_contact_channel"),
         "matched_skills": matched_skills,
     }
     sources.append({"source": "vacancy.structured", "kind": "vacancy"})
@@ -1739,9 +1791,11 @@ def run_matching_decision_agent(structured: dict[str, Any], raw_text: str) -> tu
 
 def fallback_draft(structured: dict[str, Any], matched_skills: list[str]) -> str:
     skills = ", ".join(matched_skills[:4]) if matched_skills else "backend and infrastructure work"
-    recruiter = structured.get("recruiter_handle") or "there"
+    preferred_channel = structured.get("preferred_contact_channel") or "telegram"
+    recruiter = structured.get("recruiter_handle") if preferred_channel == "telegram" else None
+    greeting = f"Hello {recruiter}." if recruiter else "Hello."
     return (
-        f"Hello {recruiter}. I saw the vacancy '{structured['title']}' and it looks relevant to my background. "
+        f"{greeting} I saw the vacancy '{structured['title']}' and it looks relevant to my background. "
         f"My experience is strongest in {skills}. If the role is still актуальна, I can share a concise profile "
         "and examples of relevant backend/LLM infrastructure work."
     )
@@ -1808,23 +1862,36 @@ def sanitize_draft_text(raw_text: str, recruiter_handle: str | None, source_text
     return text
 
 
+def contact_greeting_handle(structured: dict[str, Any]) -> str | None:
+    if structured.get("preferred_contact_channel") == "email":
+        return None
+    return structured.get("recruiter_handle")
+
+
 async def generate_draft_with_astrixa(
     structured: dict[str, Any],
     matched_skills: list[str],
     context_bundle: dict[str, Any],
 ) -> tuple[str, str]:
-    recruiter_hint = structured.get("recruiter_handle") or "there"
+    recruiter_hint = structured.get("recruiter_handle") or structured.get("contact_email") or "there"
+    preferred_channel = structured.get("preferred_contact_channel") or "telegram"
     context_snippets = "\n".join(str(item) for item in context_bundle.get("snippets", [])[:6])
+    style_instruction = (
+        "Write like a concise first-contact email, not like Telegram chat."
+        if preferred_channel == "email"
+        else "Write like a real Telegram outreach message, not like a formal email."
+    )
     prompt = (
-        "You are drafting a short first-contact Telegram message to a recruiter.\n"
+        "You are drafting a short first-contact outreach message to a recruiter.\n"
         "Keep it under 500 characters, professional, direct, no hype.\n"
         "Use a single compact paragraph.\n"
         "Do not use placeholders, brackets, signatures, sign-offs, markdown, or bullet points.\n"
         "Do not write [Your Name], [Recruiter's Name], [Company], or similar placeholders.\n"
         "Do not invent facts that are not present in the candidate profile or vacancy text.\n"
         "Do not add years of experience, previous employers, or achievements unless explicitly provided.\n"
+        f"Preferred contact channel: {preferred_channel}.\n"
         f"If you greet the recruiter, use this exact handle: {recruiter_hint}.\n"
-        "Write like a real Telegram outreach message, not like a formal email.\n"
+        f"{style_instruction}\n"
         f"Candidate headline: {settings.user_headline}\n"
         f"Candidate skills: {', '.join(CANDIDATE_PROFILE.get('skills', settings.user_skills))}\n"
         f"Candidate summary: {CANDIDATE_PROFILE.get('summary', settings.user_headline)}\n"
@@ -1871,7 +1938,7 @@ async def generate_draft_with_astrixa(
         ASTRIXA_CALLS.labels(outcome="empty").inc()
         return fallback_draft(structured, matched_skills), "fallback:empty_response"
 
-    sanitized = sanitize_draft_text(output_text, structured.get("recruiter_handle"), structured["preview"])
+    sanitized = sanitize_draft_text(output_text, contact_greeting_handle(structured), structured["preview"])
     if not sanitized:
         ASTRIXA_CALLS.labels(outcome="empty").inc()
         return fallback_draft(structured, matched_skills), "fallback:sanitized_empty"
@@ -2039,15 +2106,17 @@ def run_execution_safety_agent(
         }
 
     status = "allow" if filter_decision == "allow" else "manual_review"
-    if not structured.get("recruiter_handle") and filter_decision == "allow":
+    if not structured.get("contact_target") and filter_decision == "allow":
         status = "manual_review"
-        filter_reasons.append("missing_recruiter_handle")
+        filter_reasons.append("missing_contact_target")
 
     trace = {
         "agent": "execution_safety_agent",
         "status": "completed",
         "decision": status,
         "has_recruiter_handle": bool(structured.get("recruiter_handle")),
+        "has_contact_email": bool(structured.get("contact_email")),
+        "preferred_contact_channel": structured.get("preferred_contact_channel"),
     }
     AGENT_EXECUTIONS.labels(agent="execution_safety_agent", outcome="completed").inc()
     return status, trace
@@ -2142,10 +2211,12 @@ async def send_control_notification(
 
 
 def vacancy_from_row(row: sqlite3.Row) -> VacancyRecord:
+    structured_data = json.loads(row["structured_json"])
     return VacancyRecord(
         id=row["id"],
         source_channel=row["source_channel"],
         recruiter_handle=row["recruiter_handle"],
+        contact_email=structured_data.get("contact_email"),
         title=row["title"],
         status=row["status"],
         score=row["score"],
@@ -2154,7 +2225,7 @@ def vacancy_from_row(row: sqlite3.Row) -> VacancyRecord:
         filter_reasons=json.loads(row["filter_reasons_json"]),
         draft_text=row["draft_text"],
         raw_text=row["raw_text"],
-        structured_data=json.loads(row["structured_json"]),
+        structured_data=structured_data,
         context_bundle=json.loads(row["context_bundle_json"] or "{}"),
         approval_expires_at=row["approval_expires_at"],
         created_at=row["created_at"],
@@ -2169,6 +2240,27 @@ async def send_recruiter_message(handle: str, message_text: str) -> None:
         settings.telegram_api_hash,
     ) as client:
         await client.send_message(handle, message_text)
+
+
+def _send_email_sync(target_email: str, message_text: str, subject: str) -> None:
+    if not settings.smtp_host or not settings.smtp_from_email:
+        raise RuntimeError("SMTP is not configured")
+    message = EmailMessage()
+    message["From"] = settings.smtp_from_email
+    message["To"] = target_email
+    message["Subject"] = subject
+    message.set_content(message_text)
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as smtp:
+        if settings.smtp_starttls:
+            smtp.starttls()
+        if settings.smtp_username:
+            smtp.login(settings.smtp_username, settings.smtp_password)
+        smtp.send_message(message)
+
+
+async def send_recruiter_email(target_email: str, message_text: str, subject: str) -> None:
+    await asyncio.to_thread(_send_email_sync, target_email, message_text, subject)
 
 
 async def create_vacancy_record(source_channel: str, recruiter_handle: str | None, vacancy_text: str) -> VacancyRecord | None:
@@ -2341,6 +2433,8 @@ def record_dispatch_event(
     *,
     vacancy_id: str,
     recruiter_handle: str | None,
+    contact_channel: str | None,
+    contact_target: str | None,
     dispatch_mode: str,
     operator: str,
     outcome: str,
@@ -2348,13 +2442,18 @@ def record_dispatch_event(
 ) -> None:
     connection.execute(
         """
-        INSERT INTO dispatch_events (id, vacancy_id, recruiter_handle, dispatch_mode, operator, outcome, note, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO dispatch_events (
+            id, vacancy_id, recruiter_handle, contact_channel, contact_target,
+            dispatch_mode, operator, outcome, note, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(uuid.uuid4()),
             vacancy_id,
             recruiter_handle,
+            contact_channel,
+            contact_target,
             dispatch_mode,
             operator,
             outcome,
@@ -2666,6 +2765,8 @@ def recruiter_overview(recruiter_handle: str) -> RecruiterOverview:
         {
             "id": row["id"],
             "vacancy_id": row["vacancy_id"],
+            "contact_channel": row["contact_channel"],
+            "contact_target": row["contact_target"],
             "dispatch_mode": row["dispatch_mode"],
             "operator": row["operator"],
             "outcome": row["outcome"],
@@ -3438,34 +3539,43 @@ async def dispatch_vacancy(vacancy_id: str, payload: DispatchRequest) -> Vacancy
         connection.close()
         raise HTTPException(status_code=409, detail="Daily outreach limit reached")
 
+    structured = json.loads(row["structured_json"] or "{}")
     recruiter_handle = row["recruiter_handle"]
-    if recruiter_handle:
+    contact_email = structured.get("contact_email")
+    contact_channel, contact_target = resolve_contact_channel(contact_email, recruiter_handle)
+    if contact_target:
         previous_send = connection.execute(
             """
             SELECT id
             FROM dispatch_events
-            WHERE recruiter_handle = ?
+            WHERE contact_target = ?
               AND outcome IN ('sent_dry_run', 'sent_live')
             ORDER BY created_at DESC
             LIMIT 1
             """,
-            (recruiter_handle,),
+            (contact_target,),
         ).fetchone()
         if previous_send is not None:
             connection.close()
-            raise HTTPException(status_code=409, detail="Dispatch already exists for this recruiter")
+            raise HTTPException(status_code=409, detail="Dispatch already exists for this contact target")
 
     status = "sent_dry_run"
     event_type = "dispatch_dry_run"
     if settings.dispatch_mode == "manual_send":
-        if not recruiter_handle:
+        if not contact_target or not contact_channel:
             connection.close()
-            raise HTTPException(status_code=409, detail="Recruiter handle is required for live dispatch")
-        if not settings.telegram_api_id or not settings.telegram_api_hash or not settings.telegram_session_string:
-            connection.close()
-            raise HTTPException(status_code=503, detail="Telegram client is not configured for live dispatch")
+            raise HTTPException(status_code=409, detail="Contact target is required for live dispatch")
         try:
-            await send_recruiter_message(recruiter_handle, row["draft_text"])
+            if contact_channel == "email":
+                await send_recruiter_email(contact_target, row["draft_text"], row["title"])
+            elif contact_channel == "telegram":
+                if not settings.telegram_api_id or not settings.telegram_api_hash or not settings.telegram_session_string:
+                    connection.close()
+                    raise HTTPException(status_code=503, detail="Telegram client is not configured for live dispatch")
+                await send_recruiter_message(contact_target, row["draft_text"])
+            else:
+                connection.close()
+                raise HTTPException(status_code=409, detail="Unsupported contact channel")
         except Exception as exc:
             updated_at = utc_now()
             connection.execute(
@@ -3476,6 +3586,8 @@ async def dispatch_vacancy(vacancy_id: str, payload: DispatchRequest) -> Vacancy
                 connection,
                 vacancy_id=vacancy_id,
                 recruiter_handle=recruiter_handle,
+                contact_channel=contact_channel,
+                contact_target=contact_target,
                 dispatch_mode=settings.dispatch_mode,
                 operator=payload.operator,
                 outcome="send_failed",
@@ -3546,6 +3658,8 @@ async def dispatch_vacancy(vacancy_id: str, payload: DispatchRequest) -> Vacancy
         connection,
         vacancy_id=vacancy_id,
         recruiter_handle=recruiter_handle,
+        contact_channel=contact_channel,
+        contact_target=contact_target,
         dispatch_mode=settings.dispatch_mode,
         operator=payload.operator,
         outcome=status,
@@ -3560,6 +3674,8 @@ async def dispatch_vacancy(vacancy_id: str, payload: DispatchRequest) -> Vacancy
             "operator": payload.operator,
             "note": payload.note,
             "dispatch_mode": settings.dispatch_mode,
+            "contact_channel": contact_channel,
+            "contact_target": contact_target,
             "conversation_id": conversation_id,
         },
     )

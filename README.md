@@ -103,6 +103,8 @@ make demo
 
 - `dispatch` по умолчанию работает в режиме `dry_run`
 - режим `manual_send` существует, но не требуется для демонстрации PoC
+- если в вакансии найден email, preferred contact channel = `email`
+- если email нет, но найден `@handle` / `t.me/...`, preferred contact channel = `telegram`
 - `POST /api/v1/vacancies/ingest` возвращает batch-результат:
   `input_chunks`, `created_count`, `duplicate_count`, `created`
 - каждая vacancy содержит:
@@ -114,6 +116,9 @@ make demo
 - входящие replies поддерживаются через:
   `POST /api/v1/conversations/reply`
   и periodic `telegram_reply_poll` job
+- для `manual_send` по email требуется SMTP-конфигурация:
+  `TG_OUTREACH_SMTP_HOST`, `TG_OUTREACH_SMTP_PORT`, `TG_OUTREACH_SMTP_USERNAME`,
+  `TG_OUTREACH_SMTP_PASSWORD`, `TG_OUTREACH_SMTP_FROM_EMAIL`
 
 ## Observability
 

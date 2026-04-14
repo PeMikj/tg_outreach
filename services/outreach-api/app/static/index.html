@@ -611,6 +611,8 @@
                   <span class="pill">score ${item.score.toFixed(3)}</span>
                   <span class="pill">${escapeHtml(item.source_channel)}</span>
                   <span class="pill">${escapeHtml(item.recruiter_handle || "no_handle")}</span>
+                  <span class="pill">${escapeHtml(item.contact_email || "no_email")}</span>
+                  <span class="pill">${escapeHtml(item.structured_data?.preferred_contact_channel || "no_channel")}</span>
                   <span class="pill">${escapeHtml(item.filter_decision)}</span>
                 </div>
                 <div class="pill-row">${(item.filter_reasons || []).map((reason) => `<span class="pill">${escapeHtml(reason)}</span>`).join("") || `<span class="pill">no filter reasons</span>`}</div>
@@ -692,6 +694,9 @@
             <span class="pill">${escapeHtml(item.filter_decision)}</span>
             <span class="pill">${escapeHtml(item.source_channel)}</span>
             <span class="pill">${escapeHtml(item.recruiter_handle || "no_handle")}</span>
+            <span class="pill">${escapeHtml(item.contact_email || "no_email")}</span>
+            <span class="pill">${escapeHtml(item.structured_data?.preferred_contact_channel || "no_channel")}</span>
+            <span class="pill">${escapeHtml(item.structured_data?.contact_target || "no_target")}</span>
           </div>
         </section>
         <section class="detail-section">
@@ -771,7 +776,7 @@
           if ((overview.dispatch_events || []).length) {
             timelineParts.push("Dispatch events:");
             for (const event of overview.dispatch_events) {
-              timelineParts.push(`- ${event.created_at} ${event.outcome} via ${event.dispatch_mode} by ${event.operator}`);
+              timelineParts.push(`- ${event.created_at} ${event.outcome} via ${event.dispatch_mode} to ${event.contact_channel || "unknown"}:${event.contact_target || "-"} by ${event.operator}`);
             }
           }
           if ((overview.outreach_attempts || []).length) {
