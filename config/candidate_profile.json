@@ -1,0 +1,39 @@
+{
+  "candidate_id": "demo-backend-mlops",
+  "headline": "Senior Python/ML engineer focused on backend systems and MLOps",
+  "summary": "Backend-focused engineer building Python services, LLM integrations, data workflows and production observability.",
+  "seniority": "senior",
+  "years_experience": 6,
+  "primary_roles": [
+    "backend engineer",
+    "python engineer",
+    "ml engineer",
+    "mlops engineer",
+    "platform engineer"
+  ],
+  "skills": [
+    "python",
+    "fastapi",
+    "backend",
+    "mlops",
+    "llm",
+    "docker",
+    "postgresql",
+    "observability",
+    "etl",
+    "api",
+    "prompting"
+  ],
+  "preferred_domains": [
+    "ai",
+    "saas",
+    "developer tools",
+    "automation",
+    "data"
+  ],
+  "sample_highlights": [
+    "Built production Python services and integrations around LLM workflows",
+    "Worked on monitoring, tracing and operational reliability",
+    "Shipped backend systems with Docker and PostgreSQL"
+  ]
+}

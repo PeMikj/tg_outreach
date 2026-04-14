@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Определяет единый контракт интеграционных адаптеров: Telegram, LLM, embeddings, scheduler/clock,
-encryption storage.
+Определяет единый контракт интеграционных адаптеров: Telegram, Astrixa gateway, embeddings,
+scheduler/clock, encryption storage.
 
 ## Common Adapter Rules
 
@@ -41,14 +41,14 @@ Protections:
 - idempotency key required for send
 - duplicate recipient guard
 
-## LLM Adapter
+## Astrixa Adapter
 
 Operations:
 
-- `parse_vacancy(raw_text, metadata)`
-- `generate_outreach(structured_vacancy, context_bundle, constraints)`
-- `classify_reply(reply_text, conversation_summary)`
-- `summarize_conversation(messages)`
+- `chat_completion(messages, model, metadata)`
+- `draft_generation(structured_vacancy, context_bundle, constraints)`
+- `reply_classification(reply_text, conversation_summary)`
+- `conversation_summary(messages)`
 
 Constraints:
 
@@ -61,6 +61,8 @@ Protections:
 - Strict response schema validation
 - Token budget precheck
 - Prompt inputs treat Telegram content as untrusted text
+- Authentication goes through Astrixa bearer token or agent-scoped auth
+- Guardrails and anonymization are delegated to Astrixa control plane
 
 Fallbacks:
 

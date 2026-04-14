@@ -55,3 +55,22 @@
 - execution pipeline
 - external dependency health
 - policy denials and manual review volume
+- failed jobs and retry visibility
+- recruiter/contact extraction health
+
+## Read Models
+
+Минимальный PoC dashboard/read-only слой должен быть доступен через API:
+
+- `GET /api/v1/ops/summary`
+  - jobs by status/type
+  - due pending jobs
+  - overdue leased jobs
+  - failed jobs
+  - recruiter status distribution
+  - conversation status distribution
+  - contact extraction status/reason distribution
+- `GET /api/v1/ops/failed-jobs`
+  - recent failed jobs
+  - attempts / max_attempts
+  - last error

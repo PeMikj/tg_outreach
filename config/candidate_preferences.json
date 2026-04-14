@@ -1,0 +1,41 @@
+{
+  "remote_only": true,
+  "allowed_locations": [
+    "remote",
+    "worldwide",
+    "europe",
+    "georgia",
+    "tbilisi"
+  ],
+  "preferred_roles": [
+    "backend engineer",
+    "python engineer",
+    "ml engineer",
+    "mlops engineer",
+    "platform engineer"
+  ],
+  "excluded_roles": [
+    "frontend",
+    "ios",
+    "android",
+    "qa",
+    "designer",
+    "sales"
+  ],
+  "min_salary": 3000,
+  "currency": "USD",
+  "must_have_skills": [
+    "python"
+  ],
+  "excluded_keywords": [
+    "unpaid",
+    "internship",
+    "office only",
+    "gambling"
+  ],
+  "outreach_style": {
+    "tone": "direct",
+    "max_chars": 500,
+    "allow_signoff": false
+  }
+}

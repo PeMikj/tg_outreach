@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TG Outreach Operator Console</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --panel: #fffaf0;
+      --ink: #1d2a2f;
+      --muted: #5e6b6f;
+      --accent: #0b7a75;
+      --accent-2: #d95d39;
+      --line: #d7cdbf;
+      --ok: #2f7d4c;
+      --warn: #b7791f;
+      --bad: #b83232;
+      --shadow: 0 10px 24px rgba(22, 29, 32, 0.08);
+      --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      --sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(11,122,117,0.10), transparent 32%),
+        radial-gradient(circle at top right, rgba(217,93,57,0.10), transparent 28%),
+        linear-gradient(180deg, #f5f1e8 0%, #f0ebdf 100%);
+    }
+
+    header {
+      padding: 24px 28px 12px;
+      border-bottom: 1px solid rgba(29,42,47,0.08);
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(14px);
+      background: rgba(245, 241, 232, 0.92);
+      z-index: 10;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .toolbar {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .layout {
+      padding: 22px 28px 48px;
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 18px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 16px 18px 10px;
+      border-bottom: 1px solid rgba(29,42,47,0.08);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .panel-head .meta {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .panel-body {
+      padding: 16px 18px 18px;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .field input, .field select, .field textarea {
+      width: 100%;
+      border: 1px solid rgba(29,42,47,0.12);
+      background: white;
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      font-family: var(--sans);
+    }
+
+    .field textarea {
+      min-height: 120px;
+      resize: vertical;
+      font-family: var(--mono);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+    }
+
+    .stat {
+      padding: 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(29,42,47,0.08);
+      background: rgba(255,255,255,0.55);
+    }
+
+    .stat .label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .stat .value {
+      margin-top: 6px;
+      font-size: 26px;
+      font-weight: 700;
+      font-family: var(--mono);
+    }
+
+    .pill-row, .kv-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      padding: 8px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(29,42,47,0.10);
+      background: rgba(255,255,255,0.70);
+      font-size: 12px;
+    }
+
+    .pill code {
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .board {
+      display: grid;
+      gap: 14px;
+    }
+
+    .lane {
+      border: 1px solid rgba(29,42,47,0.08);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.45);
+    }
+
+    .lane-head {
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(29,42,47,0.08);
+    }
+
+    .lane-items {
+      display: grid;
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .card {
+      padding: 14px;
+      border: 1px solid rgba(29,42,47,0.10);
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+
+    .card .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .card .draft, .card .raw, .mono-block {
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.45;
+      padding: 12px;
+      border-radius: 12px;
+      background: #f6f2ea;
+      border: 1px solid rgba(29,42,47,0.08);
+    }
+
+    .card .raw {
+      margin-top: 10px;
+      color: #3b494d;
+    }
+
+    .actions {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    button, .ghost-link {
+      appearance: none;
+      border: 1px solid rgba(29,42,47,0.12);
+      background: #ffffff;
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 9px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+    button.warn { background: #fff3db; border-color: #efcf88; }
+    button.bad { background: #fff0f0; border-color: #e7abab; color: var(--bad); }
+    button:disabled { opacity: 0.5; cursor: wait; }
+
+    .mini-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mini-item {
+      padding: 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(29,42,47,0.08);
+    }
+
+    .mini-item strong { display: block; margin-bottom: 6px; }
+    .muted { color: var(--muted); }
+    .status-ok { color: var(--ok); }
+    .status-warn { color: var(--warn); }
+    .status-bad { color: var(--bad); }
+    .mono { font-family: var(--mono); }
+    .empty { color: var(--muted); font-style: italic; }
+    .section-note { margin-top: 12px; color: var(--muted); font-size: 12px; }
+    .selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(11,122,117,0.12);
+    }
+
+    .detail-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .detail-section {
+      border: 1px solid rgba(29,42,47,0.08);
+      background: rgba(255,255,255,0.50);
+      border-radius: 14px;
+      padding: 12px;
+    }
+
+    .detail-section h3 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .detail-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Operator Console</h1>
+    <div class="sub">Single-node multi-agent Telegram outreach PoC. All LLM-dependent steps route through Astrixa.</div>
+    <div class="toolbar">
+      <button class="primary" id="refresh-btn">Refresh</button>
+      <button id="seed-btn">Seed worker jobs</button>
+      <button id="poll-btn">Poll replies</button>
+      <button class="warn" id="stop-on-btn">Emergency stop ON</button>
+      <button class="warn" id="stop-off-btn">Emergency stop OFF</button>
+      <span class="muted" id="last-refresh">not loaded</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stack">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Pipeline</h2>
+          <div class="meta" id="health-meta">loading</div>
+        </div>
+        <div class="panel-body">
+          <div class="stats" id="summary-stats"></div>
+          <div class="section-note" id="config-note"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Review Board</h2>
+          <div class="meta">operator actions on top of existing API</div>
+        </div>
+        <div class="panel-body">
+          <div class="control-grid">
+            <div class="field">
+              <label for="status-filter">Status filter</label>
+              <select id="status-filter">
+                <option value="">all</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="decision-filter">Decision filter</label>
+              <select id="decision-filter">
+                <option value="">all</option>
+                <option value="allow">allow</option>
+                <option value="deny">deny</option>
+                <option value="manual_review">manual_review</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="search-filter">Search</label>
+              <input id="search-filter" type="text" placeholder="title, recruiter, company, text">
+            </div>
+          </div>
+          <div class="section-note">Click any card to open a detail pane with full context and actions.</div>
+          <div class="board" id="review-board"></div>
+        </div>
+      </section>
+    </section>
+
+    <aside class="stack">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Ops Summary</h2>
+          <div class="meta">worker and queue visibility</div>
+        </div>
+        <div class="panel-body">
+          <div class="stats" id="ops-stats"></div>
+          <h3>Job status</h3>
+          <div class="pill-row" id="jobs-by-status"></div>
+          <h3>Recruiters</h3>
+          <div class="pill-row" id="recruiters-by-status"></div>
+          <h3>Contact extraction</h3>
+          <div class="pill-row" id="contact-status"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Vacancy Detail</h2>
+          <div class="meta" id="detail-meta">select a vacancy</div>
+        </div>
+        <div class="panel-body detail-grid" id="detail-panel">
+          <div class="empty">No vacancy selected.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Recruiters</h2>
+          <div class="meta">latest recruiter state</div>
+        </div>
+        <div class="panel-body mini-list" id="recruiters-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Conversations</h2>
+          <div class="meta">reply and follow-up state</div>
+        </div>
+        <div class="panel-body mini-list" id="conversations-list"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Failed Jobs</h2>
+          <div class="meta">retry visibility</div>
+        </div>
+        <div class="panel-body mini-list" id="failed-jobs"></div>
+      </section>
+    </aside>
+  </main>
+
+  <script>
+    const el = (id) => document.getElementById(id);
+    const state = {
+      board: null,
+      vacanciesById: new Map(),
+      recruiters: [],
+      conversations: [],
+      selectedVacancyId: null
+    };
+
+    async function request(path, options = {}) {
+      const res = await fetch(path, {
+        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        ...options
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `${res.status} ${res.statusText}`);
+      }
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        return res.json();
+      }
+      return res.text();
+    }
+
+    function statCard(label, value) {
+      return `<div class="stat"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    }
+
+    function pills(data) {
+      const items = Object.entries(data || {});
+      if (!items.length) return `<div class="empty">no data</div>`;
+      return items.map(([key, value]) => `<span class="pill"><code>${key}</code>: ${value}</span>`).join("");
+    }
+
+    function escapeHtml(text) {
+      return String(text || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    async function action(path, method = "POST", body = {}) {
+      return request(path, { method, body: JSON.stringify(body) });
+    }
+
+    async function withButton(button, fn) {
+      button.disabled = true;
+      try {
+        await fn();
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    function renderRecruiters(items) {
+      const target = el("recruiters-list");
+      if (!items.length) {
+        target.innerHTML = `<div class="empty">no recruiters yet</div>`;
+        return;
+      }
+      target.innerHTML = items.slice(0, 12).map((item) => `
+        <div class="mini-item">
+          <strong>${escapeHtml(item.recruiter_handle)}</strong>
+          <div class="muted">status: <span class="mono">${escapeHtml(item.status)}</span></div>
+          <div class="muted">outbound: ${item.outbound_count} | inbound: ${item.inbound_count}</div>
+          <div class="muted">positive: ${item.positive_reply_count} | negative: ${item.negative_reply_count}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderConversations(items) {
+      const target = el("conversations-list");
+      if (!items.length) {
+        target.innerHTML = `<div class="empty">no conversations yet</div>`;
+        return;
+      }
+      target.innerHTML = items.slice(0, 12).map((item) => `
+        <div class="mini-item">
+          <strong>${escapeHtml(item.recruiter_handle)}</strong>
+          <div class="muted">status: <span class="mono">${escapeHtml(item.status)}</span></div>
+          <div class="muted">last outbound: ${escapeHtml(item.last_outbound_at || "-")}</div>
+          <div class="muted">last inbound: ${escapeHtml(item.last_inbound_at || "-")}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderFailedJobs(items) {
+      const target = el("failed-jobs");
+      if (!items.length) {
+        target.innerHTML = `<div class="empty">no failed jobs</div>`;
+        return;
+      }
+      target.innerHTML = items.map((item) => `
+        <div class="mini-item">
+          <strong>${escapeHtml(item.job_type)} / ${escapeHtml(item.entity_id)}</strong>
+          <div class="muted">attempts: ${item.attempts}/${item.max_attempts}</div>
+          <div class="mono-block">${escapeHtml(item.last_error || "unknown error")}</div>
+        </div>
+      `).join("");
+    }
+
+    function renderReviewBoard(board) {
+      const target = el("review-board");
+      state.board = board;
+      state.vacanciesById = new Map();
+      for (const group of board.groups || []) {
+        for (const item of group.items || []) {
+          state.vacanciesById.set(item.id, item);
+        }
+      }
+
+      const statusFilter = el("status-filter").value;
+      const decisionFilter = el("decision-filter").value;
+      const searchValue = el("search-filter").value.trim().toLowerCase();
+
+      const groups = (board.groups || []).map((group) => {
+        const filteredItems = (group.items || []).filter((item) => {
+          if (statusFilter && item.status !== statusFilter) return false;
+          if (decisionFilter && item.filter_decision !== decisionFilter) return false;
+          if (searchValue) {
+            const haystack = [
+              item.title,
+              item.source_channel,
+              item.recruiter_handle,
+              item.raw_text,
+              item.draft_text,
+              item.structured_data?.company
+            ].join(" ").toLowerCase();
+            if (!haystack.includes(searchValue)) return false;
+          }
+          return true;
+        });
+        return { ...group, items: filteredItems };
+      }).filter((group) => (group.items || []).length);
+
+      if (!groups.length) {
+        target.innerHTML = `<div class="empty">review board is empty</div>`;
+        return;
+      }
+
+      const statusOptions = Array.from(new Set((board.groups || []).map((group) => group.status)));
+      const select = el("status-filter");
+      const existing = Array.from(select.options).slice(1).map((option) => option.value);
+      if (existing.join("|") !== statusOptions.join("|")) {
+        select.innerHTML = `<option value="">all</option>` + statusOptions.map((status) => (
+          `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`
+        )).join("");
+        select.value = statusFilter;
+      }
+
+      target.innerHTML = groups.map((group) => `
+        <div class="lane">
+          <div class="lane-head">
+            <strong>${escapeHtml(group.status)}</strong>
+            <span class="mono">${group.items.length}</span>
+          </div>
+          <div class="lane-items">
+            ${group.items.slice(0, 8).map((item) => `
+              <article class="card ${state.selectedVacancyId === item.id ? "selected" : ""}" data-card-id="${item.id}">
+                <h3>${escapeHtml(item.title)}</h3>
+                <div class="meta">
+                  <span class="pill mono">${escapeHtml(item.id.slice(0, 8))}</span>
+                  <span class="pill">score ${item.score.toFixed(3)}</span>
+                  <span class="pill">${escapeHtml(item.source_channel)}</span>
+                  <span class="pill">${escapeHtml(item.recruiter_handle || "no_handle")}</span>
+                  <span class="pill">${escapeHtml(item.filter_decision)}</span>
+                </div>
+                <div class="pill-row">${(item.filter_reasons || []).map((reason) => `<span class="pill">${escapeHtml(reason)}</span>`).join("") || `<span class="pill">no filter reasons</span>`}</div>
+                <div class="draft">${escapeHtml(item.draft_text || "")}</div>
+                <div class="raw">${escapeHtml(item.raw_text || "")}</div>
+                <div class="actions">
+                  ${["awaiting_approval", "manual_review"].includes(item.status) ? `<button class="primary" data-action="approve" data-id="${item.id}">Approve</button>` : ""}
+                  ${["awaiting_approval", "manual_review", "approved"].includes(item.status) ? `<button class="bad" data-action="reject" data-id="${item.id}">Reject</button>` : ""}
+                  ${["awaiting_approval", "manual_review", "approved"].includes(item.status) ? `<button data-action="edit" data-id="${item.id}">Edit draft</button>` : ""}
+                  ${item.status === "approved" ? `<button class="warn" data-action="queue" data-id="${item.id}">Queue send</button>` : ""}
+                  ${item.status === "ready_to_send" ? `<button class="warn" data-action="dispatch" data-id="${item.id}">Dispatch</button>` : ""}
+                </div>
+              </article>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+
+      target.querySelectorAll("[data-card-id]").forEach((card) => {
+        card.addEventListener("click", async (event) => {
+          if (event.target.closest("button")) return;
+          state.selectedVacancyId = card.dataset.cardId;
+          renderReviewBoard(state.board);
+          await renderDetailPanel();
+        });
+      });
+
+      target.querySelectorAll("button[data-action]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          await withButton(button, async () => {
+            const id = button.dataset.id;
+            const op = button.dataset.action;
+            if (op === "approve") {
+              await action(`/api/v1/vacancies/${id}/approve`, "POST", { operator: "ui-operator" });
+            } else if (op === "reject") {
+              const note = prompt("Reject note", "operator rejected from console");
+              await action(`/api/v1/vacancies/${id}/reject`, "POST", { operator: "ui-operator", note: note || null });
+            } else if (op === "edit") {
+              const currentCard = button.closest(".card");
+              const currentDraft = currentCard.querySelector(".draft").innerText;
+              const edited = prompt("Edit draft", currentDraft);
+              if (!edited) return;
+              await action(`/api/v1/vacancies/${id}/edit`, "POST", {
+                operator: "ui-operator",
+                edited_draft: edited
+              });
+            } else if (op === "queue") {
+              await action(`/api/v1/vacancies/${id}/queue-send`, "POST", { operator: "ui-operator" });
+            } else if (op === "dispatch") {
+              await action(`/api/v1/vacancies/${id}/dispatch`, "POST", { operator: "ui-operator" });
+            }
+            await refreshAll();
+          });
+        });
+      });
+    }
+
+    async function renderDetailPanel() {
+      const target = el("detail-panel");
+      const vacancyId = state.selectedVacancyId;
+      if (!vacancyId) {
+        el("detail-meta").textContent = "select a vacancy";
+        target.innerHTML = `<div class="empty">No vacancy selected.</div>`;
+        return;
+      }
+
+      const item = await request(`/api/v1/vacancies/${vacancyId}`);
+      const recruiter = state.recruiters.find((entry) => entry.recruiter_handle === item.recruiter_handle);
+      const conversation = state.conversations.find((entry) => entry.recruiter_handle === item.recruiter_handle);
+      el("detail-meta").textContent = `${item.title} / ${item.status}`;
+
+      target.innerHTML = `
+        <section class="detail-section">
+          <h3>Identity</h3>
+          <div class="pill-row">
+            <span class="pill mono">${escapeHtml(item.id)}</span>
+            <span class="pill">${escapeHtml(item.status)}</span>
+            <span class="pill">score ${item.score.toFixed(3)}</span>
+            <span class="pill">${escapeHtml(item.filter_decision)}</span>
+            <span class="pill">${escapeHtml(item.source_channel)}</span>
+            <span class="pill">${escapeHtml(item.recruiter_handle || "no_handle")}</span>
+          </div>
+        </section>
+        <section class="detail-section">
+          <h3>Structured Vacancy</h3>
+          <div class="mono-block">${escapeHtml(JSON.stringify(item.structured_data || {}, null, 2))}</div>
+        </section>
+        <section class="detail-section">
+          <h3>Context Bundle</h3>
+          <div class="mono-block">${escapeHtml(JSON.stringify(item.context_bundle || {}, null, 2))}</div>
+        </section>
+        <section class="detail-section">
+          <h3>Recruiter Snapshot</h3>
+          <div class="mono-block">${escapeHtml(JSON.stringify(recruiter || { detail: "no recruiter record" }, null, 2))}</div>
+        </section>
+        <section class="detail-section">
+          <h3>Conversation Snapshot</h3>
+          <div class="mono-block">${escapeHtml(JSON.stringify(conversation || { detail: "no conversation record" }, null, 2))}</div>
+        </section>
+        <section class="detail-section">
+          <h3>Draft</h3>
+          <div class="draft">${escapeHtml(item.draft_text || "")}</div>
+        </section>
+        <section class="detail-section">
+          <h3>Raw Text</h3>
+          <div class="raw">${escapeHtml(item.raw_text || "")}</div>
+        </section>
+        <section class="detail-section">
+          <h3>Recruiter Timeline</h3>
+          <div class="mono-block" id="timeline-block">loading recruiter timeline...</div>
+        </section>
+        <section class="detail-section">
+          <h3>Conversation Timeline</h3>
+          <div class="mono-block" id="conversation-timeline-block">loading conversation timeline...</div>
+        </section>
+        <section class="detail-section">
+          <h3>Actions</h3>
+          <div class="detail-actions">
+            ${["awaiting_approval", "manual_review"].includes(item.status) ? `<button class="primary" data-detail-action="approve" data-id="${item.id}">Approve</button>` : ""}
+            ${["awaiting_approval", "manual_review", "approved"].includes(item.status) ? `<button class="bad" data-detail-action="reject" data-id="${item.id}">Reject</button>` : ""}
+            ${["awaiting_approval", "manual_review", "approved"].includes(item.status) ? `<button data-detail-action="edit" data-id="${item.id}">Edit draft</button>` : ""}
+            ${item.status === "approved" ? `<button class="warn" data-detail-action="queue" data-id="${item.id}">Queue send</button>` : ""}
+            ${item.status === "ready_to_send" ? `<button class="warn" data-detail-action="dispatch" data-id="${item.id}">Dispatch</button>` : ""}
+          </div>
+        </section>
+      `;
+
+      target.querySelectorAll("button[data-detail-action]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          await withButton(button, async () => {
+            const id = button.dataset.id;
+            const op = button.dataset.detailAction;
+            if (op === "approve") {
+              await action(`/api/v1/vacancies/${id}/approve`, "POST", { operator: "ui-operator" });
+            } else if (op === "reject") {
+              const note = prompt("Reject note", "operator rejected from detail view");
+              await action(`/api/v1/vacancies/${id}/reject`, "POST", { operator: "ui-operator", note: note || null });
+            } else if (op === "edit") {
+              const edited = prompt("Edit draft", item.draft_text || "");
+              if (!edited) return;
+              await action(`/api/v1/vacancies/${id}/edit`, "POST", { operator: "ui-operator", edited_draft: edited });
+            } else if (op === "queue") {
+              await action(`/api/v1/vacancies/${id}/queue-send`, "POST", { operator: "ui-operator" });
+            } else if (op === "dispatch") {
+              await action(`/api/v1/vacancies/${id}/dispatch`, "POST", { operator: "ui-operator" });
+            }
+            await refreshAll();
+          });
+        });
+      });
+
+      const timelineBlock = el("timeline-block");
+      const conversationTimelineBlock = el("conversation-timeline-block");
+      if (item.recruiter_handle && timelineBlock) {
+        try {
+          const overview = await request(`/api/v1/recruiters/${encodeURIComponent(item.recruiter_handle)}/overview`);
+          const timelineParts = [];
+          if ((overview.dispatch_events || []).length) {
+            timelineParts.push("Dispatch events:");
+            for (const event of overview.dispatch_events) {
+              timelineParts.push(`- ${event.created_at} ${event.outcome} via ${event.dispatch_mode} by ${event.operator}`);
+            }
+          }
+          if ((overview.outreach_attempts || []).length) {
+            timelineParts.push("Outreach attempts:");
+            for (const attempt of overview.outreach_attempts) {
+              timelineParts.push(`- ${attempt.created_at} ${attempt.attempt_type} / ${attempt.outcome}`);
+            }
+          }
+          if ((overview.conversation_summaries || []).length) {
+            timelineParts.push("Conversation summaries:");
+            for (const summary of overview.conversation_summaries.slice(0, 3)) {
+              timelineParts.push(`- ${summary.created_at} ${summary.source_event}: ${summary.summary_text}`);
+            }
+          }
+          if ((overview.timeline || []).length) {
+            timelineParts.push("Audit timeline:");
+            for (const event of overview.timeline.slice(0, 12)) {
+              timelineParts.push(`- ${event.created_at} ${event.event_type} [${event.entity_id}] ${JSON.stringify(event.payload)}`);
+            }
+          }
+          timelineBlock.textContent = timelineParts.length ? timelineParts.join("\n") : "No recruiter timeline yet.";
+        } catch (err) {
+          timelineBlock.textContent = `Failed to load recruiter timeline: ${err.message}`;
+        }
+      }
+      if (conversation && conversationTimelineBlock) {
+        try {
+          const timeline = await request(`/api/v1/conversations/${encodeURIComponent(conversation.id)}/timeline`);
+          conversationTimelineBlock.textContent = timeline.length
+            ? timeline.slice(0, 20).map((entry) => {
+                const head = `${entry.created_at} ${entry.kind}${entry.direction ? ` / ${entry.direction}` : ""}${entry.source ? ` / ${entry.source}` : ""}`;
+                return `${head}\n${entry.summary}\n${JSON.stringify(entry.details)}`;
+              }).join("\n\n")
+            : "No conversation timeline yet.";
+        } catch (err) {
+          conversationTimelineBlock.textContent = `Failed to load conversation timeline: ${err.message}`;
+        }
+      }
+    }
+
+    async function refreshAll() {
+      const [
+        health,
+        config,
+        summary,
+        board,
+        ops,
+        recruiters,
+        conversations,
+        failedJobs
+      ] = await Promise.all([
+        request("/healthz"),
+        request("/api/v1/config"),
+        request("/api/v1/dashboard/summary"),
+        request("/api/v1/dashboard/review"),
+        request("/api/v1/ops/summary"),
+        request("/api/v1/recruiters"),
+        request("/api/v1/conversations"),
+        request("/api/v1/ops/failed-jobs")
+      ]);
+
+      state.recruiters = recruiters;
+      state.conversations = conversations;
+
+      el("health-meta").textContent = `${health.service} / ${health.status}`;
+      el("summary-stats").innerHTML = [
+        statCard("vacancies", summary.total_vacancies),
+        statCard("awaiting approval", summary.by_status.awaiting_approval || 0),
+        statCard("ready to send", summary.by_status.ready_to_send || 0),
+        statCard("sent dry run", summary.by_status.sent_dry_run || 0),
+        statCard("filtered out", summary.by_status.filtered_out || 0),
+        statCard("failed jobs", ops.failed_jobs || 0)
+      ].join("");
+
+      el("config-note").innerHTML =
+        `dispatch=<span class="mono">${escapeHtml(config.dispatch_mode)}</span>, ` +
+        `notify_target=<span class="mono">${escapeHtml(config.notify_target || "unset")}</span>, ` +
+        `telegram_configured=<span class="mono">${String(config.telegram_configured)}</span>, ` +
+        `emergency_stop=<span class="mono">${String(config.emergency_stop.enabled)}</span>`;
+
+      el("ops-stats").innerHTML = [
+        statCard("jobs", ops.total_jobs),
+        statCard("due pending", ops.due_pending_jobs),
+        statCard("overdue leased", ops.overdue_leased_jobs),
+        statCard("recruiters", ops.total_recruiters),
+        statCard("conversations", ops.total_conversations),
+        statCard("contacted no reply", ops.contacted_without_reply)
+      ].join("");
+      el("jobs-by-status").innerHTML = pills(ops.jobs_by_status);
+      el("recruiters-by-status").innerHTML = pills(ops.recruiters_by_status);
+      el("contact-status").innerHTML = pills(ops.contact_extraction_by_status);
+
+      renderReviewBoard(board);
+      renderRecruiters(recruiters);
+      renderConversations(conversations);
+      renderFailedJobs(failedJobs);
+      await renderDetailPanel();
+
+      el("last-refresh").textContent = `last refresh ${new Date().toLocaleTimeString()}`;
+    }
+
+    el("refresh-btn").addEventListener("click", () => withButton(el("refresh-btn"), refreshAll));
+    el("seed-btn").addEventListener("click", () => withButton(el("seed-btn"), async () => {
+      await action("/api/v1/admin/seed-worker-jobs", "POST", {});
+      await refreshAll();
+    }));
+    el("poll-btn").addEventListener("click", () => withButton(el("poll-btn"), async () => {
+      await action("/api/v1/telegram/replies/poll", "POST", { per_conversation_limit: 5 });
+      await refreshAll();
+    }));
+    el("stop-on-btn").addEventListener("click", () => withButton(el("stop-on-btn"), async () => {
+      await action("/api/v1/control/emergency-stop", "POST", {
+        operator: "ui-operator",
+        enabled: true,
+        reason: "enabled from operator console"
+      });
+      await refreshAll();
+    }));
+    el("stop-off-btn").addEventListener("click", () => withButton(el("stop-off-btn"), async () => {
+      await action("/api/v1/control/emergency-stop", "POST", {
+        operator: "ui-operator",
+        enabled: false,
+        reason: "disabled from operator console"
+      });
+      await refreshAll();
+    }));
+    el("status-filter").addEventListener("change", () => renderReviewBoard(state.board || { groups: [] }));
+    el("decision-filter").addEventListener("change", () => renderReviewBoard(state.board || { groups: [] }));
+    el("search-filter").addEventListener("input", () => renderReviewBoard(state.board || { groups: [] }));
+
+    refreshAll().catch((err) => {
+      alert(err.message);
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

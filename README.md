@@ -1,108 +1,168 @@
 # Autonomous Telegram Career Outreach Agent
 
-## 🧠 Описание проекта
+PoC-система для Telegram outreach с обязательным использованием
+[`Astrixa`](./vendor/astrixa) как единственного LLM control plane.
 
-Autonomous Telegram Career Outreach Agent — это локальный автономный агент,
-который мониторит Telegram-каналы с вакансиями, оценивает релевантность
-вакансий профилю пользователя, генерирует персонализированные сообщения
-рекрутерам и управляет безопасным follow-up.
+## Состав
 
-Проект направлен на автоматизацию первичного карьерного outreach при
-строгом соблюдении ограничений и политик безопасности.
+- `vendor/astrixa`
+  LLM gateway, routing, guardrails, auth, provider abstraction, observability
+- `outreach-api`
+  HTTP API, operator console, read models, state transitions
+- `outreach-worker`
+  DB-backed background execution: reply polling, follow-up jobs, recovery loop
+- `SQLite`
+  локальное хранилище состояния, audit trail, job queue
 
----
+Внутренний execution flow реализован как явный multi-agent pipeline:
 
-## 🎯 Для кого этот проект
+- `Ingestion Agent`
+- `Matching & Decision Agent`
+- `Generation Agent`
+- `Execution & Safety Agent`
 
-- Специалисты в IT, ищущие работу через Telegram-каналы
-- ML / AI инженеры
-- Разработчики, использующие Telegram как основной источник вакансий
-- Соискатели, которым важно экономить время и структурировать отклики
+Все LLM-dependent шаги выполняются только через `Astrixa`.
 
----
+## Запуск
 
-## 🚨 Какая боль решается
+1. Подготовить `.env`:
 
-Соискатель тратит значительное время на:
+```bash
+cp .env.example .env
+```
 
-- Ручной мониторинг каналов
-- Фильтрацию нерелевантных вакансий
-- Написание однотипных сообщений
-- Отслеживание ответов рекрутеров
-- Напоминания о follow-up
+2. Поднять `Astrixa`:
 
-Система снижает когнитивную нагрузку и автоматизирует повторяющиеся действия,
-сохраняя контроль пользователя.
+```bash
+make astrixa-up
+```
 
----
+3. Поднять PoC:
 
-## 🚀 Что делает PoC (демо-версия)
+```bash
+make poc-up
+```
 
-Proof-of-Concept реализует:
+4. Проверить доступность:
 
-1. Мониторинг выбранных Telegram-каналов
-2. Парсинг вакансий
-3. Расчёт релевантности (match score)
-4. Генерацию персонализированного черновика сообщения
-5. Подтверждение пользователем перед отправкой
-6. Отправку Telegram-сообщения рекрутеру
-7. Отслеживание состояния диалога
-8. Один автоматический follow-up (при отсутствии ответа)
-9. Лимитирование количества сообщений в день
-10. Локальное безопасное хранение состояния
+```bash
+curl -sS http://127.0.0.1:18080/healthz
+curl -sS http://127.0.0.1:18100/healthz
+```
 
----
+5. Открыть operator console:
 
-## ❌ Что НЕ входит в PoC (Out of Scope)
+```text
+http://127.0.0.1:18100/ui
+```
 
-- Массовая автоматическая рассылка
-- LinkedIn-интеграция
-- Полностью автономная многошаговая переписка
-- Автоматическое назначение встреч (календарь)
-- Email-интеграция (возможное расширение)
-- SaaS-модель с мульти-пользователями
-- Автоматическое вступление в приватные каналы
+## Краткая демонстрация
 
----
+1. Выполнить demo-ingest:
 
-## 🔐 Безопасность
+```bash
+make demo
+```
 
-Система:
+2. Открыть `http://127.0.0.1:18100/ui`.
 
-- Требует подтверждение перед первым outreach
-- Ограничивает число сообщений в день
-- Не отправляет повторные сообщения одному рекрутеру
-- Останавливается при получении отказа
-- Хранит данные локально и в зашифрованном виде
-- Маскирует персональные данные в логах
+3. Проверить:
 
----
+- появление вакансии в `Review Board`
+- `Ops Summary`
+- переходы `approve -> queue send -> dispatch` в режиме `dry_run`
 
-## 📊 Ключевые метрики
+## Основные endpoints
 
-- Точность определения релевантных вакансий
-- Доля одобренных пользователем сообщений
-- Response rate
-- Эффект follow-up
-- Частота ошибок выполнения
-- Количество предотвращённых policy-нарушений
+- `GET /healthz`
+- `GET /metrics`
+- `GET /ui`
+- `GET /api/v1/config`
+- `GET /api/v1/control/emergency-stop`
+- `POST /api/v1/control/emergency-stop`
+- `POST /api/v1/vacancies/ingest`
+- `GET /api/v1/vacancies`
+- `GET /api/v1/conversations`
+- `GET /api/v1/conversations/{conversation_id}/timeline`
+- `GET /api/v1/recruiters`
+- `GET /api/v1/recruiters/{recruiter_handle}/overview`
+- `POST /api/v1/conversations/reply`
+- `GET /api/v1/jobs`
+- `GET /api/v1/ops/summary`
+- `GET /api/v1/ops/failed-jobs`
+- `POST /api/v1/telegram/replies/poll`
+- `POST /api/v1/admin/seed-worker-jobs`
+- `POST /api/v1/vacancies/{vacancy_id}/approve`
+- `POST /api/v1/vacancies/{vacancy_id}/reject`
+- `POST /api/v1/vacancies/{vacancy_id}/edit`
+- `POST /api/v1/vacancies/{vacancy_id}/queue-send`
+- `POST /api/v1/vacancies/{vacancy_id}/dispatch`
+- `POST /api/v1/telegram/ingest`
 
----
+## Текущее поведение
 
-## 🏗 Архитектура
+- `dispatch` по умолчанию работает в режиме `dry_run`
+- режим `manual_send` существует, но не требуется для демонстрации PoC
+- `POST /api/v1/vacancies/ingest` возвращает batch-результат:
+  `input_chunks`, `created_count`, `duplicate_count`, `created`
+- каждая vacancy содержит:
+  `context_bundle`, `approval_expires_at`,
+  `structured_data.contact_extraction_status`,
+  `structured_data.contact_extraction_reason`
+- `dispatch` создает:
+  `conversation`, `outreach_attempt`, `follow_up_due` job
+- входящие replies поддерживаются через:
+  `POST /api/v1/conversations/reply`
+  и periodic `telegram_reply_poll` job
 
-Система состоит из следующих модулей:
+## Observability
 
-- Telegram Client Module
-- Core Agent Logic (Parsing + Scoring + Decision Engine)
-- LLM Service Module
-- Conversation State & Local Storage
-- Safety & Governance Layer
+- `GET /api/v1/ops/summary`
+  queue status, failed jobs count, recruiter/conversation state, contact extraction health
+- `GET /api/v1/ops/failed-jobs`
+  recent failed jobs with attempts and last error
 
----
+Operator console раздается напрямую из `outreach-api` по `GET /ui`.
+Отдельный frontend service и отдельный JS build step не используются.
 
-## ⚖ Дисклеймер
+## Replay / Eval
 
-Проект предназначен для локального использования и автоматизации
-повторяющихся действий, при сохранении контроля пользователя
-и соблюдении норм ответственного взаимодействия.
+Для regression replay по сохраненному корпусу вакансий:
+
+```bash
+make eval-replay
+```
+
+Команда выполняет `python -m app.replay_eval` внутри `outreach-api` и выводит:
+
+- `scanned`
+- `changed`
+- `unchanged`
+- `field_change_counts`
+- sample diffs между сохраненным и текущим parser/policy output
+
+## Telegram Dry-Run Ingest
+
+Для чтения реальных Telegram-каналов используется read-only ingest через user session string.
+
+Требуемые переменные:
+
+- `TG_OUTREACH_TELEGRAM_API_ID`
+- `TG_OUTREACH_TELEGRAM_API_HASH`
+- `TG_OUTREACH_TELEGRAM_SESSION_STRING`
+- `TG_OUTREACH_TELEGRAM_CHANNELS`
+- `TG_OUTREACH_TELEGRAM_REPLY_POLL_INTERVAL_SECONDS`
+
+Пример запуска:
+
+```bash
+curl -sS -X POST http://127.0.0.1:18100/api/v1/telegram/ingest \
+  -H 'content-type: application/json' \
+  -d '{"per_channel_limit":5}'
+```
+
+Этот endpoint только читает сообщения из каналов и создает локальные vacancy records.
+
+## Notifications
+
+Уведомления оператору направляются только в отдельный control target, а не в диалоги с рекрутерами.

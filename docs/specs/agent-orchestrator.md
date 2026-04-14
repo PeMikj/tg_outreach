@@ -2,21 +2,20 @@
 
 ## Purpose
 
-Управляет всеми workflow как явной state machine и является единственной точкой,
-которая может инициировать side effects после прохождения policy и idempotency checks.
+Управляет multi-agent workflow как явной state machine и является единственной точкой,
+которая координирует handoff между агентами и разрешает side effects после policy
+и idempotency checks.
 
 ## Main Steps
 
-1. ingest raw event
-2. parse vacancy or reply
-3. retrieve context
-4. score / classify
-5. policy decision
-6. generate draft if allowed
-7. wait for approval
-8. revalidate before send
-9. perform side effect
-10. persist result and schedule next action
+1. route raw event to `Ingestion Agent`
+2. hand off structured vacancy to `Matching & Decision Agent`
+3. build context and call `Generation Agent`
+4. run `Execution & Safety Agent` prechecks
+5. wait for approval
+6. revalidate TTL/policy before send
+7. perform side effect
+8. persist result and schedule next action
 
 ## Transition Rules
 

@@ -1,0 +1,3 @@
+[submodule "vendor/astrixa"]
+	path = vendor/astrixa
+	url = https://github.com/PeMikj/astrixa.git
