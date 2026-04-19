@@ -117,6 +117,10 @@ SQL_DIR = Path(__file__).with_name("sql")
 DB_SCHEMA_INITIALIZED = False
 
 
+class RuntimeValidationError(RuntimeError):
+    pass
+
+
 class PostgresConnection:
     def __init__(self, connection: psycopg.Connection) -> None:
         self._connection = connection
@@ -148,6 +152,57 @@ def get_existing_columns(connection: Any, table_name: str) -> set[str]:
             (table_name,),
         ).fetchall()
     }
+
+
+def telegram_runtime_configured() -> bool:
+    return bool(settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_session_string)
+
+
+def smtp_runtime_configured() -> bool:
+    return bool(settings.smtp_host and settings.smtp_from_email)
+
+
+def validate_runtime_config() -> None:
+    errors: list[str] = []
+
+    if not settings.database_url:
+        errors.append("TG_OUTREACH_DATABASE_URL is required")
+
+    if settings.dispatch_mode not in {"dry_run", "manual_send"}:
+        errors.append("TG_OUTREACH_DISPATCH_MODE must be one of: dry_run, manual_send")
+
+    if settings.context_budget_tokens <= 0:
+        errors.append("TG_OUTREACH_CONTEXT_BUDGET_TOKENS must be > 0")
+
+    if settings.max_daily_outreach <= 0:
+        errors.append("TG_OUTREACH_MAX_DAILY_OUTREACH must be > 0")
+
+    if settings.approval_ttl_seconds <= 0:
+        errors.append("TG_OUTREACH_APPROVAL_TTL_SECONDS must be > 0")
+
+    if settings.follow_up_delay_seconds <= 0:
+        errors.append("TG_OUTREACH_FOLLOW_UP_DELAY_SECONDS must be > 0")
+
+    if settings.worker_poll_seconds <= 0:
+        errors.append("TG_OUTREACH_WORKER_POLL_SECONDS must be > 0")
+
+    if settings.telegram_reply_poll_interval_seconds <= 0:
+        errors.append("TG_OUTREACH_TELEGRAM_REPLY_POLL_INTERVAL_SECONDS must be > 0")
+
+    if settings.notify_target and not telegram_runtime_configured():
+        errors.append("TG_OUTREACH_NOTIFY_TARGET requires Telegram runtime credentials")
+
+    if settings.smtp_username and not settings.smtp_password:
+        errors.append("TG_OUTREACH_SMTP_PASSWORD is required when TG_OUTREACH_SMTP_USERNAME is set")
+
+    if settings.smtp_password and not settings.smtp_username:
+        errors.append("TG_OUTREACH_SMTP_USERNAME is required when TG_OUTREACH_SMTP_PASSWORD is set")
+
+    if settings.dispatch_mode == "manual_send" and not (telegram_runtime_configured() or smtp_runtime_configured()):
+        errors.append("manual_send requires Telegram runtime credentials or SMTP runtime configuration")
+
+    if errors:
+        raise RuntimeValidationError("; ".join(errors))
 
 
 class VacancyIngestRequest(BaseModel):
@@ -2619,13 +2674,11 @@ def admin_runtime() -> dict[str, Any]:
         "git_sha": settings.git_sha,
         "database_backend": database_backend_name(),
         "dispatch_mode": settings.dispatch_mode,
-        "telegram_configured": bool(
-            settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_session_string
-        ),
+        "telegram_configured": telegram_runtime_configured(),
         "secret_status": {
             "astrixa_token_configured": bool(settings.astrixa_token),
             "telegram_session_configured": bool(settings.telegram_session_string),
-            "smtp_configured": bool(settings.smtp_host and settings.smtp_from_email),
+            "smtp_configured": smtp_runtime_configured(),
         },
         "worker": {
             "worker_id": None if worker_heartbeat is None else worker_heartbeat.get("worker_id"),
@@ -2679,6 +2732,11 @@ def metrics() -> PlainTextResponse:
     return PlainTextResponse(generate_latest().decode("utf-8"), media_type=CONTENT_TYPE_LATEST)
 
 
+@app.on_event("startup")
+async def startup_validate_runtime() -> None:
+    validate_runtime_config()
+
+
 @app.get("/api/v1/config")
 def get_config() -> dict[str, Any]:
     connection = get_db()
@@ -2702,9 +2760,7 @@ def get_config() -> dict[str, Any]:
             "preferred_roles": CANDIDATE_PREFERENCES.get("preferred_roles", []),
         },
         "telegram_channels": settings.telegram_channels,
-        "telegram_configured": bool(
-            settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_session_string
-        ),
+        "telegram_configured": telegram_runtime_configured(),
         "notify_target": settings.notify_target,
         "dispatch_mode": settings.dispatch_mode,
         "emergency_stop": emergency_stop.model_dump(),

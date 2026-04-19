@@ -1,4 +1,4 @@
-.PHONY: astrixa-up astrixa-down poc-up poc-down demo eval-replay health status smoke security-check verify migrate
+.PHONY: astrixa-up astrixa-down poc-up poc-down demo eval-replay health status smoke security-check verify migrate preflight
 
 astrixa-up:
 	docker compose --env-file .env -f vendor/astrixa/docker-compose.yml up -d --build
@@ -49,3 +49,10 @@ verify:
 	python3 -m py_compile scripts/check_secret_hygiene.py services/outreach-api/app/main.py services/outreach-api/app/worker.py services/outreach-api/app/replay_eval.py
 	$(MAKE) security-check
 	$(MAKE) smoke
+
+preflight:
+	$(MAKE) verify
+	$(MAKE) migrate
+	curl -sS http://127.0.0.1:18100/version
+	curl -sS http://127.0.0.1:18100/api/v1/admin/runtime
+	curl -sS http://127.0.0.1:18100/api/v1/admin/dependencies

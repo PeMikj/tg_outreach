@@ -171,6 +171,7 @@ make smoke
 make security-check
 make verify
 make migrate
+make preflight
 curl -sS http://127.0.0.1:18100/api/v1/config
 curl -sS http://127.0.0.1:18100/api/v1/ops/summary
 curl -sS http://127.0.0.1:18100/api/v1/jobs
@@ -184,6 +185,7 @@ curl -sS http://127.0.0.1:18100/api/v1/jobs
 - `security-check` подтверждает, что tracked files не содержат очевидных секретов;
 - `verify` прогоняет compile check, secret hygiene check и smoke check;
 - `migrate` явно выводит applied SQL migrations;
+- `preflight` прогоняет verify, migrate, version, runtime и dependency probes;
 - конфиг читается;
 - `ops/summary` возвращает агрегаты;
 - `ops/summary` показывает `generation_sources` и `fallback_generations` для контроля деградации generation path;
