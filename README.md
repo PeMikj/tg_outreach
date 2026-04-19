@@ -173,6 +173,7 @@ make verify
 make migrate
 make preflight
 make test
+make cleanup-demo-data
 curl -sS http://127.0.0.1:18100/api/v1/config
 curl -sS http://127.0.0.1:18100/api/v1/ops/summary
 curl -sS http://127.0.0.1:18100/api/v1/jobs
@@ -188,6 +189,7 @@ curl -sS http://127.0.0.1:18100/api/v1/jobs
 - `migrate` явно выводит applied SQL migrations;
 - `preflight` прогоняет verify, migrate, version, runtime и dependency probes;
 - `test` запускает минимальные regression tests для runtime validation, migrate command и `ops/summary`;
+- `cleanup-demo-data` удаляет demo/smoke записи и связанные test artifacts из runtime storage;
 - конфиг читается;
 - `ops/summary` возвращает агрегаты;
 - `ops/summary` показывает `generation_sources` и `fallback_generations` для контроля деградации generation path;

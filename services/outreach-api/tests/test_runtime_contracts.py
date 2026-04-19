@@ -15,6 +15,7 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from app import main as app_main  # noqa: E402
+from app import cleanup as app_cleanup  # noqa: E402
 from app import migrate as app_migrate  # noqa: E402
 
 
@@ -123,6 +124,50 @@ class MigrateCommandTests(unittest.TestCase):
         self.assertEqual(payload["database_backend"], "postgres")
         self.assertEqual(payload["applied_count"], 2)
         self.assertEqual(payload["applied_versions"], ["001_init.sql", "002_extra.sql"])
+        self.assertTrue(fake_connection.closed)
+
+
+class CleanupCommandTests(unittest.TestCase):
+    def test_cleanup_command_reports_deleted_counts(self) -> None:
+        class CleanupConnection(FakeConnection):
+            def __init__(self) -> None:
+                super().__init__({})
+                self.calls: list[tuple[str, tuple[object, ...] | list[object]]] = []
+
+            def execute(self, query: str, params: tuple[object, ...] | list[object] = ()) -> FakeCursor:
+                normalized = " ".join(query.split())
+                self.calls.append((normalized, tuple(params)))
+                if normalized.startswith("SELECT id, recruiter_handle FROM vacancies"):
+                    return FakeCursor(
+                        [
+                            {"id": "vac-1", "recruiter_handle": "@recruiter_1"},
+                            {"id": "vac-2", "recruiter_handle": "@recruiter_2"},
+                        ]
+                    )
+                if normalized.startswith("SELECT id FROM conversations WHERE recruiter_handle IN"):
+                    return FakeCursor([{"id": "conv-1"}, {"id": "conv-2"}])
+
+                cursor = FakeCursor([])
+                cursor.rowcount = 1
+                return cursor
+
+            def commit(self) -> None:
+                self.committed = True
+
+        fake_connection = CleanupConnection()
+        captured = io.StringIO()
+        with (
+            patch.object(app_cleanup, "get_db", return_value=fake_connection),
+            redirect_stdout(captured),
+        ):
+            app_cleanup.main()
+
+        payload = json.loads(captured.getvalue())
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["matched_vacancies"], 2)
+        self.assertEqual(payload["matched_recruiters"], 2)
+        self.assertEqual(payload["matched_conversations"], 2)
+        self.assertIn("vacancies", payload["deleted"])
         self.assertTrue(fake_connection.closed)
 
 

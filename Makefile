@@ -1,4 +1,4 @@
-.PHONY: astrixa-up astrixa-down poc-up poc-down demo eval-replay health status smoke security-check verify migrate preflight test
+.PHONY: astrixa-up astrixa-down poc-up poc-down demo eval-replay health status smoke security-check verify migrate preflight test cleanup-demo-data
 
 astrixa-up:
 	docker compose --env-file .env -f vendor/astrixa/docker-compose.yml up -d --build
@@ -23,6 +23,9 @@ eval-replay:
 
 migrate:
 	docker compose --env-file .env -f docker-compose.poc.yml exec -T outreach-api python -m app.migrate
+
+cleanup-demo-data:
+	docker compose --env-file .env -f docker-compose.poc.yml exec -T outreach-api python -m app.cleanup
 
 health:
 	curl -sS http://127.0.0.1:18080/healthz
