@@ -189,6 +189,7 @@ curl -sS http://127.0.0.1:18100/api/v1/jobs
 - конфиг читается;
 - `ops/summary` возвращает агрегаты;
 - `ops/summary` показывает `generation_sources` и `fallback_generations` для контроля деградации generation path;
+- `ops/summary` показывает `worker_status`, `astrixa_health_status`, `astrixa_invoke_status` и `dependency_degraded`;
 - worker создает и обрабатывает фоновые jobs.
 
 Быстрый smoke test:

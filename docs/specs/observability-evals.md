@@ -76,6 +76,9 @@
   - contact extraction status/reason distribution
   - generation source distribution
   - fallback generation count
+  - worker heartbeat state
+  - Astrixa health/invoke status
+  - aggregated dependency degraded flag
 - `GET /api/v1/ops/failed-jobs`
   - recent failed jobs
   - attempts / max_attempts

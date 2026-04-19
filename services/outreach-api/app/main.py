@@ -416,6 +416,11 @@ class OpsSummary(BaseModel):
     contact_extraction_by_reason: dict[str, int]
     generation_sources: dict[str, int]
     fallback_generations: int
+    worker_status: str
+    worker_heartbeat_age_seconds: int | None = None
+    astrixa_health_status: str
+    astrixa_invoke_status: str
+    dependency_degraded: bool
 
 
 class TimelineEventRecord(BaseModel):
@@ -3183,6 +3188,7 @@ def ops_summary() -> OpsSummary:
     recruiter_rows = connection.execute("SELECT * FROM recruiters").fetchall()
     conversation_rows = connection.execute("SELECT * FROM conversations").fetchall()
     vacancy_rows = connection.execute("SELECT structured_json, draft_source FROM vacancies").fetchall()
+    worker_heartbeat, worker_heartbeat_updated_at = get_control_state_value(connection, "worker_heartbeat")
     connection.close()
 
     jobs_by_status: dict[str, int] = {}
@@ -3238,6 +3244,21 @@ def ops_summary() -> OpsSummary:
         if draft_source.startswith("fallback:"):
             fallback_generations += 1
 
+    worker_heartbeat_age_seconds = age_seconds_from_iso(worker_heartbeat_updated_at)
+    worker_status = "missing"
+    if worker_heartbeat_age_seconds is not None:
+        worker_status = "ok" if worker_heartbeat_age_seconds <= (settings.worker_poll_seconds * 3) else "stale"
+
+    astrixa_health = probe_astrixa_health()
+    astrixa_invoke = probe_astrixa_invoke()
+    astrixa_health_status = str(astrixa_health.get("status", "unknown"))
+    astrixa_invoke_status = str(astrixa_invoke.get("status", "unknown"))
+    dependency_degraded = (
+        worker_status != "ok"
+        or astrixa_health_status != "ok"
+        or astrixa_invoke_status != "ok"
+    )
+
     return OpsSummary(
         total_jobs=len(job_rows),
         jobs_by_status=jobs_by_status,
@@ -3255,6 +3276,11 @@ def ops_summary() -> OpsSummary:
         contact_extraction_by_reason=contact_extraction_by_reason,
         generation_sources=generation_sources,
         fallback_generations=fallback_generations,
+        worker_status=worker_status,
+        worker_heartbeat_age_seconds=worker_heartbeat_age_seconds,
+        astrixa_health_status=astrixa_health_status,
+        astrixa_invoke_status=astrixa_invoke_status,
+        dependency_degraded=dependency_degraded,
     )
 
 
