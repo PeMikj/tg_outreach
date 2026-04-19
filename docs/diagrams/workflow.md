@@ -23,8 +23,11 @@ flowchart TD
     M -- approve --> N[Re-run policy + idempotency check]
     N --> O{Ready to send?}
     O -- no --> O1[Stop and alert]
-    O -- yes --> P[Send Telegram message]
-    P --> Q{Send ok?}
+    O -- yes --> P{Contact channel}
+    P -- email --> P1[Send email or dry_run]
+    P -- telegram --> P2[Send Telegram message or dry_run]
+    P1 --> Q{Send ok?}
+    P2 --> Q{Send ok?}
     Q -- rate limit --> Q1[Cooldown and reschedule]
     Q -- transient error --> Q2[Retry with backoff]
     Q -- permanent error --> Q3[Manual intervention]

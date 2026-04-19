@@ -8,35 +8,30 @@ flowchart TB
 
     subgraph PoC Node
         api[API / Backend Gateway]
-        orch[Orchestrator Worker]
-        retr[Retriever Service]
-        tools[Tool Layer\nTelegram / LLM / Embeddings]
-        sched[Scheduler]
-        db[(PostgreSQL)]
-        files[(Encrypted Files)]
-        obs[Observability\nOTel + Prometheus + Grafana]
+        worker[Orchestrator / Worker]
+        tools[Tool Layer\nTelegram / SMTP / Astrixa]
+        db[(Postgres)]
+        cfg[(Local Config Files)]
+        obs[Prometheus Metrics\nAudit / Ops Read Models]
     end
 
     tg[Telegram API]
-    llm[LLM API]
-    emb[Embedding API or Local Model]
+    smtp[SMTP Server]
+    astrixa[Astrixa Gateway]
 
     ui --> api
     api --> db
     api --> obs
-    api --> orch
-    sched --> orch
-    orch --> db
-    orch --> retr
-    orch --> tools
-    orch --> obs
-    retr --> db
-    retr --> tools
-    retr --> obs
-    db --> files
+    api --> worker
+    worker --> db
+    worker --> tools
+    worker --> obs
+    api --> tools
+    api --> cfg
+    worker --> cfg
     tools --> tg
-    tools --> llm
-    tools --> emb
+    tools --> smtp
+    tools --> astrixa
 ```
 
 Диаграмма разделяет control plane, execution plane, integrations и persistent state.

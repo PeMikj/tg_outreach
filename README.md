@@ -1,18 +1,56 @@
 # Autonomous Telegram Career Outreach Agent
 
-PoC-система для Telegram outreach с обязательным использованием
-[`Astrixa`](./vendor/astrixa) как единственного LLM control plane.
+PoC-система для Telegram career outreach: ingest вакансий, parsing, matching,
+draft generation, operator approval, controlled dispatch, reply handling и follow-up.
+
+Обязательное архитектурное ограничение: все LLM-dependent шаги выполняются только через
+[`Astrixa`](./vendor/astrixa). Прямые вызовы во внешние LLM API из доменной логики запрещены.
+
+## Задача
+
+Система предназначена для одного оператора, который отслеживает вакансии в Telegram
+и управляет outreach без ручного просмотра всего потока публикаций.
+
+Текущая боль:
+
+- вакансии публикуются как неструктурированный поток;
+- релевантность приходится оценивать вручную;
+- outreach и follow-up выполняются непоследовательно;
+- легко допустить дубликаты, ошибки в контактах и лишние сообщения.
+
+## Что делает PoC на демо
+
+PoC демонстрирует следующий безопасный контур:
+
+- ingest вакансий из ручного API и из Telegram-каналов;
+- parsing и split digest-постов;
+- matching и policy decision;
+- draft generation через `Astrixa`;
+- operator review через встроенный UI;
+- approval, queue-send и dispatch в `dry_run`;
+- conversation state, reply polling, follow-up draft generation;
+- audit trail, jobs, ops summary и replay/eval.
+
+## Что PoC не делает
+
+Явно out of scope:
+
+- мультиарендность;
+- production-grade distributed deployment;
+- полностью автономную переписку без human approval;
+- массовую рассылку;
+- обязательную live-send демонстрацию во внешние чаты или email.
 
 ## Состав
 
 - `vendor/astrixa`
-  LLM gateway, routing, guardrails, auth, provider abstraction, observability
+  LLM gateway, routing, auth, guardrails, provider abstraction, базовая telemetry
 - `outreach-api`
-  HTTP API, operator console, read models, state transitions
+  HTTP API, встроенный operator console, read models, state transitions, metrics
 - `outreach-worker`
   DB-backed background execution: reply polling, follow-up jobs, recovery loop
-- `SQLite`
-  локальное хранилище состояния, audit trail, job queue
+- `Postgres`
+  primary durable storage для состояния, audit trail и job queue
 
 Внутренний execution flow реализован как явный multi-agent pipeline:
 
@@ -21,42 +59,85 @@ PoC-система для Telegram outreach с обязательным испо
 - `Generation Agent`
 - `Execution & Safety Agent`
 
-Все LLM-dependent шаги выполняются только через `Astrixa`.
+## Prerequisites
+
+Требуется:
+
+- `git` c поддержкой submodule;
+- `docker`;
+- `docker compose`;
+- доступ к upstream LLM provider, настроенному в `Astrixa`, либо рабочая mock-конфигурация внутри `Astrixa`.
+
+Для Telegram ingest дополнительно требуются:
+
+- `TG_OUTREACH_TELEGRAM_API_ID`
+- `TG_OUTREACH_TELEGRAM_API_HASH`
+- `TG_OUTREACH_TELEGRAM_SESSION_STRING`
+
+Для live email send в режиме `manual_send` дополнительно требуются:
+
+- `TG_OUTREACH_SMTP_HOST`
+- `TG_OUTREACH_SMTP_PORT`
+- `TG_OUTREACH_SMTP_USERNAME`
+- `TG_OUTREACH_SMTP_PASSWORD`
+- `TG_OUTREACH_SMTP_FROM_EMAIL`
 
 ## Запуск
 
-1. Подготовить `.env`:
+1. Клонировать репозиторий вместе с submodule:
+
+```bash
+git clone <repo-url>
+cd tg_outreach
+git submodule update --init --recursive
+```
+
+2. Подготовить `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Поднять `Astrixa`:
+3. Заполнить в `.env` как минимум:
+
+- токен `Astrixa`;
+- параметры upstream provider или mock-конфигурацию в `Astrixa`;
+- Telegram credentials, если нужен реальный channel ingest;
+- SMTP credentials только если нужен live email send.
+
+4. Поднять `Astrixa`:
 
 ```bash
 make astrixa-up
 ```
 
-3. Поднять PoC:
+5. Поднять PoC:
 
 ```bash
 make poc-up
 ```
 
-4. Проверить доступность:
+6. Проверить доступность:
 
 ```bash
 curl -sS http://127.0.0.1:18080/healthz
 curl -sS http://127.0.0.1:18100/healthz
+curl -sS http://127.0.0.1:18100/readyz
 ```
 
-5. Открыть operator console:
+Ожидаемые ответы:
+
+- `{"status":"ok","service":"api-gateway"}`
+- `{"status":"ok","service":"tg-outreach-api"}`
+- `{"status":"ok","service":"tg-outreach-api","database_backend":"postgres",...}`
+
+7. Открыть operator console:
 
 ```text
 http://127.0.0.1:18100/ui
 ```
 
-## Краткая демонстрация
+## Минимальная демонстрация
 
 1. Выполнить demo-ingest:
 
@@ -68,13 +149,41 @@ make demo
 
 3. Проверить:
 
-- появление вакансии в `Review Board`
-- `Ops Summary`
-- переходы `approve -> queue send -> dispatch` в режиме `dry_run`
+- появление vacancy в `Review Board`;
+- `Ops Summary`;
+- переходы `approve -> queue send -> dispatch`;
+- конечный статус `sent_dry_run`.
+
+## Как понять, что проект поднялся корректно
+
+Минимальный operational check:
+
+```bash
+make health
+make status
+curl -sS http://127.0.0.1:18100/api/v1/config
+curl -sS http://127.0.0.1:18100/api/v1/ops/summary
+curl -sS http://127.0.0.1:18100/api/v1/jobs
+```
+
+Признаки корректного старта:
+
+- API отвечает без `5xx`;
+- `readyz` подтверждает `database=ok` и `astrixa=ok`;
+- конфиг читается;
+- `ops/summary` возвращает агрегаты;
+- worker создает и обрабатывает фоновые jobs.
+
+Быстрый smoke test:
+
+```bash
+make smoke
+```
 
 ## Основные endpoints
 
 - `GET /healthz`
+- `GET /readyz`
 - `GET /metrics`
 - `GET /ui`
 - `GET /api/v1/config`
@@ -101,24 +210,23 @@ make demo
 
 ## Текущее поведение
 
-- `dispatch` по умолчанию работает в режиме `dry_run`
-- режим `manual_send` существует, но не требуется для демонстрации PoC
-- если в вакансии найден email, preferred contact channel = `email`
-- если email нет, но найден `@handle` / `t.me/...`, preferred contact channel = `telegram`
+- `dispatch` по умолчанию работает в режиме `dry_run`;
+- `manual_send` существует, но не требуется для демонстрации PoC;
+- если в вакансии найден `email`, preferred contact channel = `email`;
+- если `email` нет, но найден `@handle` или `t.me/...`, preferred contact channel = `telegram`;
+- если нет ни `email`, ни `telegram handle`, кейс остается в review path;
 - `POST /api/v1/vacancies/ingest` возвращает batch-результат:
-  `input_chunks`, `created_count`, `duplicate_count`, `created`
+  `input_chunks`, `created_count`, `duplicate_count`, `created`;
 - каждая vacancy содержит:
   `context_bundle`, `approval_expires_at`,
   `structured_data.contact_extraction_status`,
-  `structured_data.contact_extraction_reason`
+  `structured_data.contact_extraction_reason`,
+  `structured_data.preferred_contact_channel`;
 - `dispatch` создает:
-  `conversation`, `outreach_attempt`, `follow_up_due` job
+  `outreach_attempt`, audit events и при наличии recruiter conversation state;
 - входящие replies поддерживаются через:
   `POST /api/v1/conversations/reply`
-  и periodic `telegram_reply_poll` job
-- для `manual_send` по email требуется SMTP-конфигурация:
-  `TG_OUTREACH_SMTP_HOST`, `TG_OUTREACH_SMTP_PORT`, `TG_OUTREACH_SMTP_USERNAME`,
-  `TG_OUTREACH_SMTP_PASSWORD`, `TG_OUTREACH_SMTP_FROM_EMAIL`
+  и periodic `telegram_reply_poll` job.
 
 ## Observability
 
@@ -126,6 +234,8 @@ make demo
   queue status, failed jobs count, recruiter/conversation state, contact extraction health
 - `GET /api/v1/ops/failed-jobs`
   recent failed jobs with attempts and last error
+- `GET /metrics`
+  Prometheus metrics из `outreach-api`
 
 Operator console раздается напрямую из `outreach-api` по `GET /ui`.
 Отдельный frontend service и отдельный JS build step не используются.

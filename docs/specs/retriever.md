@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Обеспечивает сбор релевантного контекста для scoring, draft generation и reply classification,
-при этом сохраняет работоспособность системы даже при недоступности embedding/rerank-контура.
+Обеспечивает сбор релевантного контекста для scoring, draft generation и reply classification
+без отдельного retrieval service и без обязательного embedding-контура.
 
 ## Sources
 
@@ -11,13 +11,13 @@
 - User preferences and constraints
 - Historical approved outreach
 - Historical conversation summaries
-- Vacancy history
+- Recruiter profile snippets
 
 ## Storage and Index
 
-- Structured metadata хранится в Postgres
-- Lexical index обязателен
-- Vector index опционален для PoC, но интерфейс под него резервируется
+- Structured metadata хранится в `Postgres`
+- Retrieval выполняется in-process внутри `outreach-api` / `outreach-worker`
+- Отдельный lexical engine и vector index не требуются для текущего PoC
 
 ## Query Contract
 
@@ -31,34 +31,31 @@ Input:
 Output:
 
 - ordered list of context chunks
-- per-chunk score
-- retrieval mode: `lexical | hybrid`
+- source labels
+- retrieval mode: `in_process_context_bundle`
 - truncation metadata
 
 ## Search Pipeline
 
 1. Metadata filtering
-2. Lexical candidate retrieval
-3. Optional semantic rerank
-4. Score thresholding
-5. Budget-aware chunk selection
+2. Deterministic selection of profile, preferences, recruiter memory, summaries and approved snippets
+3. Budget-aware chunk selection
+4. Truncation decisions stored in `context_bundle`
 
 ## Constraints
 
-- `top_k` default 5, max 10
-- Retrieval timeout: 800 ms soft, 1500 ms hard
-- Missing embeddings must not fail the whole workflow
+- `top_k` behavior задается через in-process builder
+- Retrieval не должен обращаться к внешним сервисам кроме уже сохраненного local state
+- Недостаток контекста не должен валить workflow целиком
 
 ## Failure Handling
 
-- On vector failure -> lexical-only mode
-- On timeout -> return best partial lexical result
-- On empty result -> use template fallback and raise low-context flag
+- On low-context result -> use template fallback and raise low-context flag
+- On oversized context -> drop low-priority chunks and keep structured fields first
 
 ## Telemetry
 
-- retrieval latency
-- hit rate
-- empty-result rate
-- hybrid vs lexical-only ratio
+- context assembly latency
+- low-context rate
 - chunk count and token estimate
+- truncation frequency

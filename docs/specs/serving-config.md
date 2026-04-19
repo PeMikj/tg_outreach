@@ -7,7 +7,7 @@ PoC запускается как набор локальных сервисов
 - `vendor/astrixa/*` stack
 - `outreach-api`
 - `outreach-worker`
-- `sqlite` file in local volume
+- `postgres` service and local volume
 
 Operator console в текущем PoC раздается напрямую из `outreach-api`.
 
@@ -16,6 +16,7 @@ Retriever реализован как библиотечный слой внут
 ## Configuration Domains
 
 - Telegram credentials/session
+- SMTP credentials
 - Astrixa base URL/token/model
 - upstream provider/model/version inside Astrixa
 - retry and timeout budgets
@@ -26,8 +27,8 @@ Retriever реализован как библиотечный слой внут
 ## Config Rules
 
 - Все runtime параметры должны быть заданы явно через env/config file
-- Конфиг валидируется на старте
-- Невалидный конфиг должен блокировать запуск
+- Критичный runtime-конфиг должен быть проверяем через `GET /api/v1/config`
+- Невалидный конфиг для live path должен блокировать соответствующий side effect
 - Значения по умолчанию допустимы только для non-secret параметров
 
 ## Secret Handling
@@ -39,11 +40,17 @@ Retriever реализован как библиотечный слой внут
 ## Versioning
 
 - Model versions are pinned in config
-- Schema migrations versioned
 - Prompt/template versions recorded in execution metadata
 
 ## Health and Startup
 
 - Liveness: process alive and event loop responsive
-- Readiness: DB reachable, schema initialized, essential adapters initialized
-- Worker should not accept jobs until readiness passes
+- Readiness for `outreach-api`: DB reachable, schema initialized
+- Readiness for `Astrixa`: gateway health endpoint отвечает
+- Worker should not execute due jobs until DB is reachable
+
+Текущие operational endpoints:
+
+- `GET /healthz`
+- `GET /readyz`
+- `GET /api/v1/config`

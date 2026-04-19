@@ -1,16 +1,13 @@
 import argparse
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any
 
-from app.main import explain_vacancy, parse_vacancy, settings
+from app.main import explain_vacancy, get_db, parse_vacancy, settings
 
 
-def load_rows(db_path: str, limit: int | None) -> list[sqlite3.Row]:
-    path = Path(db_path)
-    connection = sqlite3.connect(path, timeout=10)
-    connection.row_factory = sqlite3.Row
+def load_rows(limit: int | None) -> list[dict[str, Any]]:
+    connection = get_db()
     query = "SELECT * FROM vacancies ORDER BY created_at DESC"
     params: tuple[Any, ...] = ()
     if limit is not None:
@@ -25,7 +22,7 @@ def compare_lists(left: list[str], right: list[str]) -> bool:
     return sorted(left) == sorted(right)
 
 
-def build_record_diff(row: sqlite3.Row) -> dict[str, Any]:
+def build_record_diff(row: dict[str, Any]) -> dict[str, Any]:
     stored_structured = json.loads(row["structured_json"] or "{}")
     stored_breakdown = json.loads(row["score_breakdown_json"] or "{}")
     stored_reasons = json.loads(row["filter_reasons_json"] or "[]")
@@ -106,13 +103,12 @@ def build_record_diff(row: sqlite3.Row) -> dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Replay parser/policy eval on stored vacancies")
-    parser.add_argument("--db-path", default=settings.db_path)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--output", default=None, help="Optional path to write JSON report")
     parser.add_argument("--show", type=int, default=10, help="How many changed records to print")
     args = parser.parse_args()
 
-    rows = load_rows(args.db_path, args.limit)
+    rows = load_rows(args.limit)
     diffs = [build_record_diff(row) for row in rows]
     changed = [diff for diff in diffs if diff["changed_fields"]]
 

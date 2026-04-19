@@ -5,17 +5,17 @@ flowchart LR
     user[User / Operator]
     system[Telegram Career Outreach Agent PoC]
     telegram[Telegram API / MTProto]
-    llm[LLM Provider API]
-    embed[Embedding Provider or Local Model]
+    astrixa[Astrixa Gateway]
+    smtp[SMTP Server]
     storage[(Local Persistent Storage)]
-    obs[Observability Stack]
+    obs[Metrics / Audit / Ops Views]
 
     user -->|approve, reject, pause, inspect| system
-    system -->|read channels, send messages, poll replies| telegram
-    system -->|parse, classify, generate drafts| llm
-    system -->|embed memory docs| embed
+    system -->|read channels, send telegram messages, poll replies| telegram
+    system -->|send email when enabled| smtp
+    system -->|parse, classify, summarize, generate drafts| astrixa
     system -->|state, audit, memory, queue| storage
-    system -->|logs, metrics, traces, alerts| obs
+    system -->|metrics, audit, ops read models| obs
 ```
 
 Диаграмма показывает внешние границы системы и то, что критичные side effects идут только

@@ -1,4 +1,18 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${TG_OUTREACH_POSTGRES_DB:-tg_outreach}
+      POSTGRES_USER: ${TG_OUTREACH_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${TG_OUTREACH_POSTGRES_PASSWORD:-postgres}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TG_OUTREACH_POSTGRES_USER:-postgres} -d ${TG_OUTREACH_POSTGRES_DB:-tg_outreach}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
   outreach-api:
     build:
       context: ./services/outreach-api
@@ -8,7 +22,7 @@ services:
       TG_OUTREACH_ASTRIXA_BASE_URL: ${TG_OUTREACH_ASTRIXA_BASE_URL:-http://api-gateway:8080}
       TG_OUTREACH_ASTRIXA_MODEL: ${TG_OUTREACH_ASTRIXA_MODEL:-mock-1}
       TG_OUTREACH_ASTRIXA_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-astrixa-dev-token}
-      TG_OUTREACH_DB_PATH: ${TG_OUTREACH_DB_PATH:-/data/outreach.db}
+      TG_OUTREACH_DATABASE_URL: ${TG_OUTREACH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/tg_outreach}
       TG_OUTREACH_PROFILE_PATH: ${TG_OUTREACH_PROFILE_PATH:-/app/config/candidate_profile.json}
       TG_OUTREACH_PREFERENCES_PATH: ${TG_OUTREACH_PREFERENCES_PATH:-/app/config/candidate_preferences.json}
       TG_OUTREACH_USER_HEADLINE: ${TG_OUTREACH_USER_HEADLINE:-Senior Python/ML engineer focused on backend systems and MLOps}
@@ -36,6 +50,9 @@ services:
     volumes:
       - ./data/outreach-api:/data
       - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - default
       - astrixa_net
@@ -48,7 +65,7 @@ services:
       TG_OUTREACH_ASTRIXA_BASE_URL: ${TG_OUTREACH_ASTRIXA_BASE_URL:-http://api-gateway:8080}
       TG_OUTREACH_ASTRIXA_MODEL: ${TG_OUTREACH_ASTRIXA_MODEL:-mock-1}
       TG_OUTREACH_ASTRIXA_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-astrixa-dev-token}
-      TG_OUTREACH_DB_PATH: ${TG_OUTREACH_DB_PATH:-/data/outreach.db}
+      TG_OUTREACH_DATABASE_URL: ${TG_OUTREACH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/tg_outreach}
       TG_OUTREACH_PROFILE_PATH: ${TG_OUTREACH_PROFILE_PATH:-/app/config/candidate_profile.json}
       TG_OUTREACH_PREFERENCES_PATH: ${TG_OUTREACH_PREFERENCES_PATH:-/app/config/candidate_preferences.json}
       TG_OUTREACH_USER_HEADLINE: ${TG_OUTREACH_USER_HEADLINE:-Senior Python/ML engineer focused on backend systems and MLOps}
@@ -70,6 +87,9 @@ services:
     volumes:
       - ./data/outreach-api:/data
       - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - default
       - astrixa_net

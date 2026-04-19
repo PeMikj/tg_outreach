@@ -7,29 +7,34 @@
 
 ## Logs
 
-- Structured JSON logs
-- Correlation id, job id, conversation id, vacancy id
-- External call outcome, timeout, retry and fallback decisions
-- PII masking enabled by default
+- Audit events and runtime diagnostics must remain separate
+- Job id, conversation id, vacancy id and entity ids must be recoverable from read models
+- External call outcome, timeout, retry and fallback decisions must be observable
+
+Ограничение текущего PoC:
+
+- полноценный structured JSON logging pipeline не является завершенной частью реализации;
+- базовый observability layer строится на metrics, audit tables и API read models.
 
 ## Metrics
 
 - queue depth
 - queue age
 - job success/failure rate
-- step latency p50/p95/p99
+- request and step latency
 - Telegram send success rate
 - Telegram rate-limit event count
 - LLM timeout/error rate
-- circuit breaker open duration
-- retrieval degradation ratio
+- low-context / degraded generation ratio
 - approval conversion rate
 
 ## Traces
 
-- One trace per workflow execution
-- Child spans for DB, Telegram, LLM, retrieval, policy evaluation
-- Error tags and retry annotations required
+В текущем PoC вместо полноценного tracing используются:
+
+- `agent_trace` внутри `context_bundle`;
+- audit timeline;
+- per-step metrics.
 
 ## Alerts
 
@@ -37,7 +42,6 @@
 - worker backlog above threshold
 - repeated send failures
 - Telegram flood-wait/cooldown active
-- LLM circuit breaker open beyond threshold
 - no successful poll cycle within threshold
 
 ## Evals and Operational Checks
@@ -53,7 +57,7 @@
 
 - system health
 - execution pipeline
-- external dependency health
+- Astrixa and Telegram dependency health
 - policy denials and manual review volume
 - failed jobs and retry visibility
 - recruiter/contact extraction health

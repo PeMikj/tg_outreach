@@ -2,13 +2,13 @@
 
 ## Purpose
 
-Определяет единый контракт интеграционных адаптеров: Telegram, Astrixa gateway, embeddings,
-scheduler/clock, encryption storage.
+Определяет единый контракт интеграционных адаптеров: Telegram, SMTP, Astrixa gateway,
+scheduler/clock и local config/storage.
 
 ## Common Adapter Rules
 
 - Every call has correlation id
-- Every call emits structured logs, metrics and trace span
+- Every call emits metrics and auditable outcome metadata
 - Errors are normalized into:
   - `transient`
   - `rate_limited`
@@ -41,6 +41,28 @@ Protections:
 - idempotency key required for send
 - duplicate recipient guard
 
+## SMTP Email Adapter
+
+Operations:
+
+- `send_email(contact_email, subject, body_text, idempotency_key)`
+
+Constraints:
+
+- Send timeout depends on SMTP server
+- No live send when dispatch mode = `dry_run`
+- Requires explicit SMTP runtime configuration
+
+Side effects:
+
+- Real outbound email in `manual_send`
+
+Protections:
+
+- explicit target required
+- duplicate recipient guard
+- approval and policy checks happen before adapter invocation
+
 ## Astrixa Adapter
 
 Operations:
@@ -70,21 +92,8 @@ Fallbacks:
 - generation -> template mode
 - classification -> `unknown` and manual review
 
-## Embedding Adapter
-
-Operations:
-
-- `embed_documents(documents[])`
-- `embed_query(text)`
-
-Constraints:
-
-- Async bulk processing preferred
-- Batch size is configurable
-- Failures do not block lexical retrieval path
-
 ## Security
 
 - Secrets loaded only from runtime config
 - No raw secrets in DB or logs
-- PII masking on usernames, phone numbers and links where possible
+- Telegram content treated as untrusted input

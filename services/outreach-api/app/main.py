@@ -13,10 +13,12 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import psycopg
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import FileResponse, PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
+from psycopg.rows import dict_row
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -57,6 +59,7 @@ class Settings:
     astrixa_base_url: str = os.getenv("TG_OUTREACH_ASTRIXA_BASE_URL", "http://127.0.0.1:18080").rstrip("/")
     astrixa_model: str = os.getenv("TG_OUTREACH_ASTRIXA_MODEL", "mock-1")
     astrixa_token: str = os.getenv("TG_OUTREACH_ASTRIXA_TOKEN", "astrixa-dev-token")
+    database_url: str = os.getenv("TG_OUTREACH_DATABASE_URL", "").strip()
     db_path: str = os.getenv("TG_OUTREACH_DB_PATH", "./data/outreach.db")
     user_headline: str = os.getenv(
         "TG_OUTREACH_USER_HEADLINE",
@@ -110,6 +113,54 @@ settings = Settings()
 app = FastAPI(title="TG Outreach PoC API", version="0.1.0")
 STATIC_DIR = Path(__file__).with_name("static")
 DB_SCHEMA_INITIALIZED = False
+
+
+def use_postgres() -> bool:
+    return settings.database_url.startswith("postgresql://") or settings.database_url.startswith("postgres://")
+
+
+def translate_query(query: str) -> str:
+    if not use_postgres():
+        return query
+    return query.replace("?", "%s")
+
+
+class PostgresConnection:
+    def __init__(self, connection: psycopg.Connection) -> None:
+        self._connection = connection
+
+    def execute(self, query: str, params: tuple[Any, ...] | list[Any] = ()) -> psycopg.Cursor:
+        cursor = self._connection.cursor()
+        cursor.execute(translate_query(query), params)
+        return cursor
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
+
+
+def get_existing_columns(connection: Any, table_name: str) -> set[str]:
+    if use_postgres():
+        return {
+            str(row["column_name"])
+            for row in connection.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = ?
+                """,
+                (table_name,),
+            ).fetchall()
+        }
+    return {
+        str(row["name"])
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
 
 
 class VacancyIngestRequest(BaseModel):
@@ -359,10 +410,8 @@ CANDIDATE_PROFILE = load_json_file(settings.profile_path)
 CANDIDATE_PREFERENCES = load_json_file(settings.preferences_path)
 
 
-def initialize_db_schema(connection: sqlite3.Connection) -> None:
+def initialize_db_schema(connection: Any) -> None:
     global DB_SCHEMA_INITIALIZED
-    db_path = Path(settings.db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS vacancies (
@@ -550,9 +599,7 @@ def initialize_db_schema(connection: sqlite3.Connection) -> None:
         )
         """
     )
-    existing_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(vacancies)").fetchall()
-    }
+    existing_columns = get_existing_columns(connection, "vacancies")
     if "score_breakdown_json" not in existing_columns:
         connection.execute("ALTER TABLE vacancies ADD COLUMN score_breakdown_json TEXT NOT NULL DEFAULT '{}'")
     if "filter_decision" not in existing_columns:
@@ -563,9 +610,7 @@ def initialize_db_schema(connection: sqlite3.Connection) -> None:
         connection.execute("ALTER TABLE vacancies ADD COLUMN context_bundle_json TEXT NOT NULL DEFAULT '{}'")
     if "approval_expires_at" not in existing_columns:
         connection.execute("ALTER TABLE vacancies ADD COLUMN approval_expires_at TEXT")
-    dispatch_columns = {
-        row["name"] for row in connection.execute("PRAGMA table_info(dispatch_events)").fetchall()
-    }
+    dispatch_columns = get_existing_columns(connection, "dispatch_events")
     if "contact_channel" not in dispatch_columns:
         connection.execute("ALTER TABLE dispatch_events ADD COLUMN contact_channel TEXT")
     if "contact_target" not in dispatch_columns:
@@ -574,16 +619,25 @@ def initialize_db_schema(connection: sqlite3.Connection) -> None:
     DB_SCHEMA_INITIALIZED = True
 
 
-def get_db() -> sqlite3.Connection:
-    db_path = Path(settings.db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(db_path, timeout=10)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout = 10000")
-    connection.execute("PRAGMA synchronous = NORMAL")
+def get_db() -> Any:
+    if use_postgres():
+        raw_connection = psycopg.connect(settings.database_url, row_factory=dict_row)
+        connection: Any = PostgresConnection(raw_connection)
+    else:
+        db_path = Path(settings.db_path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        raw_connection = sqlite3.connect(db_path, timeout=10)
+        raw_connection.row_factory = sqlite3.Row
+        raw_connection.execute("PRAGMA busy_timeout = 10000")
+        raw_connection.execute("PRAGMA synchronous = NORMAL")
+        connection = raw_connection
     if not DB_SCHEMA_INITIALIZED:
         initialize_db_schema(connection)
     return connection
+
+
+def database_backend_name() -> str:
+    return "postgres" if use_postgres() else "sqlite"
 
 
 def log_audit(
@@ -2596,6 +2650,32 @@ def healthz() -> dict[str, str]:
     return {"status": "ok", "service": "tg-outreach-api"}
 
 
+@app.get("/readyz")
+def readyz() -> dict[str, Any]:
+    checks: dict[str, str] = {}
+    connection = get_db()
+    try:
+        connection.execute("SELECT 1")
+        checks["database"] = "ok"
+    finally:
+        connection.close()
+
+    try:
+        response = httpx.get(f"{settings.astrixa_base_url}/healthz", timeout=3.0)
+        response.raise_for_status()
+        checks["astrixa"] = "ok"
+    except httpx.HTTPError:
+        checks["astrixa"] = "error"
+
+    status = "ok" if all(value == "ok" for value in checks.values()) else "degraded"
+    return {
+        "status": status,
+        "service": "tg-outreach-api",
+        "database_backend": database_backend_name(),
+        "checks": checks,
+    }
+
+
 @app.get("/", include_in_schema=False)
 def operator_console_root() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -2619,6 +2699,7 @@ def get_config() -> dict[str, Any]:
     return {
         "astrixa_base_url": settings.astrixa_base_url,
         "astrixa_model": settings.astrixa_model,
+        "database_backend": database_backend_name(),
         "min_score": settings.min_score,
         "max_daily_outreach": settings.max_daily_outreach,
         "context_budget_tokens": settings.context_budget_tokens,
