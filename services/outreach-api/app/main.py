@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 import re
-import sqlite3
 import smtplib
 import time
 import uuid
@@ -60,7 +59,8 @@ class Settings:
     astrixa_model: str = os.getenv("TG_OUTREACH_ASTRIXA_MODEL", "mock-1")
     astrixa_token: str = os.getenv("TG_OUTREACH_ASTRIXA_TOKEN", "astrixa-dev-token")
     database_url: str = os.getenv("TG_OUTREACH_DATABASE_URL", "").strip()
-    db_path: str = os.getenv("TG_OUTREACH_DB_PATH", "./data/outreach.db")
+    build_version: str = os.getenv("TG_OUTREACH_BUILD_VERSION", "dev")
+    git_sha: str = os.getenv("TG_OUTREACH_GIT_SHA", "unknown")
     user_headline: str = os.getenv(
         "TG_OUTREACH_USER_HEADLINE",
         "Senior Python/ML engineer focused on backend systems and MLOps",
@@ -112,17 +112,8 @@ class Settings:
 settings = Settings()
 app = FastAPI(title="TG Outreach PoC API", version="0.1.0")
 STATIC_DIR = Path(__file__).with_name("static")
+SQL_DIR = Path(__file__).with_name("sql")
 DB_SCHEMA_INITIALIZED = False
-
-
-def use_postgres() -> bool:
-    return settings.database_url.startswith("postgresql://") or settings.database_url.startswith("postgres://")
-
-
-def translate_query(query: str) -> str:
-    if not use_postgres():
-        return query
-    return query.replace("?", "%s")
 
 
 class PostgresConnection:
@@ -131,7 +122,7 @@ class PostgresConnection:
 
     def execute(self, query: str, params: tuple[Any, ...] | list[Any] = ()) -> psycopg.Cursor:
         cursor = self._connection.cursor()
-        cursor.execute(translate_query(query), params)
+        cursor.execute(query.replace("?", "%s"), params)
         return cursor
 
     def commit(self) -> None:
@@ -145,21 +136,16 @@ class PostgresConnection:
 
 
 def get_existing_columns(connection: Any, table_name: str) -> set[str]:
-    if use_postgres():
-        return {
-            str(row["column_name"])
-            for row in connection.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = ?
-                """,
-                (table_name,),
-            ).fetchall()
-        }
     return {
-        str(row["name"])
-        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        str(row["column_name"])
+        for row in connection.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = ?
+            """,
+            (table_name,),
+        ).fetchall()
     }
 
 
@@ -406,199 +392,17 @@ def load_json_file(path: str) -> dict[str, Any]:
         return json.load(handle)
 
 
+def load_sql_file(name: str) -> str:
+    return (SQL_DIR / name).read_text(encoding="utf-8")
+
+
 CANDIDATE_PROFILE = load_json_file(settings.profile_path)
 CANDIDATE_PREFERENCES = load_json_file(settings.preferences_path)
 
 
 def initialize_db_schema(connection: Any) -> None:
     global DB_SCHEMA_INITIALIZED
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS vacancies (
-            id TEXT PRIMARY KEY,
-            source_channel TEXT NOT NULL,
-            recruiter_handle TEXT,
-            title TEXT NOT NULL,
-            raw_text TEXT NOT NULL,
-            structured_json TEXT NOT NULL,
-            score REAL NOT NULL,
-            score_breakdown_json TEXT NOT NULL DEFAULT '{}',
-            filter_decision TEXT NOT NULL DEFAULT 'manual_review',
-            filter_reasons_json TEXT NOT NULL DEFAULT '[]',
-            status TEXT NOT NULL,
-            draft_text TEXT NOT NULL,
-            draft_source TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            last_error TEXT
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS audit_events (
-            id TEXT PRIMARY KEY,
-            entity_type TEXT NOT NULL,
-            entity_id TEXT NOT NULL,
-            event_type TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS notification_events (
-            dedupe_key TEXT PRIMARY KEY,
-            entity_type TEXT NOT NULL,
-            entity_id TEXT NOT NULL,
-            event_type TEXT NOT NULL,
-            target TEXT NOT NULL,
-            payload_json TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS approval_events (
-            id TEXT PRIMARY KEY,
-            vacancy_id TEXT NOT NULL,
-            action TEXT NOT NULL,
-            operator TEXT NOT NULL,
-            note TEXT,
-            edited_draft TEXT,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS dispatch_events (
-            id TEXT PRIMARY KEY,
-            vacancy_id TEXT NOT NULL,
-            recruiter_handle TEXT,
-            contact_channel TEXT,
-            contact_target TEXT,
-            dispatch_mode TEXT NOT NULL,
-            operator TEXT NOT NULL,
-            outcome TEXT NOT NULL,
-            note TEXT,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS conversations (
-            id TEXT PRIMARY KEY,
-            recruiter_handle TEXT NOT NULL UNIQUE,
-            status TEXT NOT NULL,
-            last_outbound_at TEXT,
-            last_inbound_at TEXT,
-            rejection_flag INTEGER NOT NULL DEFAULT 0,
-            follow_up_sent INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS recruiters (
-            id TEXT PRIMARY KEY,
-            recruiter_handle TEXT NOT NULL UNIQUE,
-            status TEXT NOT NULL,
-            first_seen_at TEXT NOT NULL,
-            last_seen_at TEXT NOT NULL,
-            last_outbound_at TEXT,
-            last_inbound_at TEXT,
-            outbound_count INTEGER NOT NULL DEFAULT 0,
-            inbound_count INTEGER NOT NULL DEFAULT 0,
-            positive_reply_count INTEGER NOT NULL DEFAULT 0,
-            negative_reply_count INTEGER NOT NULL DEFAULT 0,
-            notes TEXT,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS outreach_attempts (
-            id TEXT PRIMARY KEY,
-            vacancy_id TEXT NOT NULL,
-            conversation_id TEXT NOT NULL,
-            attempt_type TEXT NOT NULL,
-            outcome TEXT NOT NULL,
-            draft_text TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS conversation_summaries (
-            id TEXT PRIMARY KEY,
-            conversation_id TEXT NOT NULL,
-            summary_text TEXT NOT NULL,
-            source_event TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS memory_documents (
-            id TEXT PRIMARY KEY,
-            memory_type TEXT NOT NULL,
-            entity_id TEXT NOT NULL,
-            content_text TEXT NOT NULL,
-            metadata_json TEXT NOT NULL DEFAULT '{}',
-            created_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS jobs (
-            id TEXT PRIMARY KEY,
-            job_type TEXT NOT NULL,
-            entity_id TEXT NOT NULL,
-            status TEXT NOT NULL,
-            run_at TEXT NOT NULL,
-            attempts INTEGER NOT NULL DEFAULT 0,
-            max_attempts INTEGER NOT NULL DEFAULT 3,
-            payload_json TEXT NOT NULL DEFAULT '{}',
-            last_error TEXT,
-            lease_owner TEXT,
-            lease_expires_at TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS inbound_message_events (
-            id TEXT PRIMARY KEY,
-            recruiter_handle TEXT NOT NULL,
-            source TEXT NOT NULL,
-            external_message_id TEXT NOT NULL,
-            raw_text TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            UNIQUE(recruiter_handle, source, external_message_id)
-        )
-        """
-    )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS control_state (
-            key TEXT PRIMARY KEY,
-            value_json TEXT NOT NULL,
-            updated_at TEXT NOT NULL
-        )
-        """
-    )
+    connection.execute(load_sql_file("001_init.sql"))
     existing_columns = get_existing_columns(connection, "vacancies")
     if "score_breakdown_json" not in existing_columns:
         connection.execute("ALTER TABLE vacancies ADD COLUMN score_breakdown_json TEXT NOT NULL DEFAULT '{}'")
@@ -620,28 +424,21 @@ def initialize_db_schema(connection: Any) -> None:
 
 
 def get_db() -> Any:
-    if use_postgres():
-        raw_connection = psycopg.connect(settings.database_url, row_factory=dict_row)
-        connection: Any = PostgresConnection(raw_connection)
-    else:
-        db_path = Path(settings.db_path)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        raw_connection = sqlite3.connect(db_path, timeout=10)
-        raw_connection.row_factory = sqlite3.Row
-        raw_connection.execute("PRAGMA busy_timeout = 10000")
-        raw_connection.execute("PRAGMA synchronous = NORMAL")
-        connection = raw_connection
+    if not settings.database_url:
+        raise RuntimeError("TG_OUTREACH_DATABASE_URL must be set")
+    raw_connection = psycopg.connect(settings.database_url, row_factory=dict_row)
+    connection: Any = PostgresConnection(raw_connection)
     if not DB_SCHEMA_INITIALIZED:
         initialize_db_schema(connection)
     return connection
 
 
 def database_backend_name() -> str:
-    return "postgres" if use_postgres() else "sqlite"
+    return "postgres"
 
 
 def log_audit(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     entity_type: str,
     entity_id: str,
@@ -668,7 +465,7 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text.split()))
 
 
-def get_emergency_stop_state(connection: sqlite3.Connection) -> EmergencyStopState:
+def get_emergency_stop_state(connection: Any) -> EmergencyStopState:
     row = connection.execute("SELECT value_json, updated_at FROM control_state WHERE key = 'emergency_stop'").fetchone()
     if row is None:
         return EmergencyStopState(enabled=False, reason=None, updated_at=None, updated_by=None)
@@ -682,7 +479,7 @@ def get_emergency_stop_state(connection: sqlite3.Connection) -> EmergencyStopSta
 
 
 def set_emergency_stop_state(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     enabled: bool,
     operator: str,
@@ -710,7 +507,7 @@ def set_emergency_stop_state(
     )
 
 
-def assert_emergency_stop_not_enabled(connection: sqlite3.Connection, action: str) -> None:
+def assert_emergency_stop_not_enabled(connection: Any, action: str) -> None:
     state = get_emergency_stop_state(connection)
     if state.enabled:
         raise HTTPException(
@@ -739,7 +536,7 @@ def age_seconds_from_iso(iso_timestamp: str | None) -> int | None:
     return max(0, int(delta.total_seconds()))
 
 
-def conversation_from_row(row: sqlite3.Row) -> ConversationRecord:
+def conversation_from_row(row: dict[str, Any]) -> ConversationRecord:
     return ConversationRecord(
         id=row["id"],
         recruiter_handle=row["recruiter_handle"],
@@ -753,7 +550,7 @@ def conversation_from_row(row: sqlite3.Row) -> ConversationRecord:
     )
 
 
-def recruiter_from_row(row: sqlite3.Row) -> RecruiterRecord:
+def recruiter_from_row(row: dict[str, Any]) -> RecruiterRecord:
     return RecruiterRecord(
         id=row["id"],
         recruiter_handle=row["recruiter_handle"],
@@ -771,7 +568,7 @@ def recruiter_from_row(row: sqlite3.Row) -> RecruiterRecord:
     )
 
 
-def ensure_recruiter(connection: sqlite3.Connection, recruiter_handle: str) -> str:
+def ensure_recruiter(connection: Any, recruiter_handle: str) -> str:
     row = connection.execute(
         "SELECT * FROM recruiters WHERE recruiter_handle = ?",
         (recruiter_handle,),
@@ -798,7 +595,7 @@ def ensure_recruiter(connection: sqlite3.Connection, recruiter_handle: str) -> s
     return recruiter_id
 
 
-def update_recruiter_outbound(connection: sqlite3.Connection, recruiter_handle: str) -> None:
+def update_recruiter_outbound(connection: Any, recruiter_handle: str) -> None:
     ensure_recruiter(connection, recruiter_handle)
     now = utc_now()
     connection.execute(
@@ -815,7 +612,7 @@ def update_recruiter_outbound(connection: sqlite3.Connection, recruiter_handle: 
     )
 
 
-def update_recruiter_inbound(connection: sqlite3.Connection, recruiter_handle: str, classification: str) -> None:
+def update_recruiter_inbound(connection: Any, recruiter_handle: str, classification: str) -> None:
     ensure_recruiter(connection, recruiter_handle)
     now = utc_now()
     positive_inc = 1 if classification == "positive" else 0
@@ -837,7 +634,7 @@ def update_recruiter_inbound(connection: sqlite3.Connection, recruiter_handle: s
     )
 
 
-def fetch_recruiter_profile(connection: sqlite3.Connection, recruiter_handle: str | None) -> dict[str, Any] | None:
+def fetch_recruiter_profile(connection: Any, recruiter_handle: str | None) -> dict[str, Any] | None:
     if not recruiter_handle:
         return None
     row = connection.execute(
@@ -858,7 +655,7 @@ def fetch_recruiter_profile(connection: sqlite3.Connection, recruiter_handle: st
     }
 
 
-def fetch_latest_conversation_summary(connection: sqlite3.Connection, conversation_id: str) -> str | None:
+def fetch_latest_conversation_summary(connection: Any, conversation_id: str) -> str | None:
     row = connection.execute(
         """
         SELECT summary_text
@@ -873,7 +670,7 @@ def fetch_latest_conversation_summary(connection: sqlite3.Connection, conversati
 
 
 def store_memory_document(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     memory_type: str,
     entity_id: str,
@@ -892,11 +689,11 @@ def store_memory_document(
 
 
 def fetch_recent_memory_documents(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     memory_type: str,
     limit: int = 3,
-) -> list[sqlite3.Row]:
+) -> list[dict[str, Any]]:
     return connection.execute(
         """
         SELECT * FROM memory_documents
@@ -909,7 +706,7 @@ def fetch_recent_memory_documents(
 
 
 def promote_approved_outreach_snippet(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     vacancy_id: str,
     recruiter_handle: str | None,
@@ -932,7 +729,7 @@ def promote_approved_outreach_snippet(
     )
 
 
-def job_from_row(row: sqlite3.Row) -> JobRecord:
+def job_from_row(row: dict[str, Any]) -> JobRecord:
     return JobRecord(
         id=row["id"],
         job_type=row["job_type"],
@@ -948,7 +745,7 @@ def job_from_row(row: sqlite3.Row) -> JobRecord:
     )
 
 
-def ensure_conversation(connection: sqlite3.Connection, recruiter_handle: str) -> str:
+def ensure_conversation(connection: Any, recruiter_handle: str) -> str:
     ensure_recruiter(connection, recruiter_handle)
     row = connection.execute(
         "SELECT * FROM conversations WHERE recruiter_handle = ?",
@@ -971,7 +768,7 @@ def ensure_conversation(connection: sqlite3.Connection, recruiter_handle: str) -
 
 
 def schedule_job(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     job_type: str,
     entity_id: str,
@@ -1005,7 +802,7 @@ def schedule_job(
     return job_id
 
 
-def cancel_pending_jobs(connection: sqlite3.Connection, *, entity_id: str, job_type: str) -> int:
+def cancel_pending_jobs(connection: Any, *, entity_id: str, job_type: str) -> int:
     updated_at = utc_now()
     cursor = connection.execute(
         """
@@ -1019,7 +816,7 @@ def cancel_pending_jobs(connection: sqlite3.Connection, *, entity_id: str, job_t
 
 
 def upsert_periodic_job(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     job_type: str,
     entity_id: str,
@@ -1076,7 +873,7 @@ def classify_reply(message_text: str) -> str:
 
 
 def ingest_recruiter_reply_internal(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     recruiter_handle: str,
     message_text: str,
@@ -2145,7 +1942,7 @@ async def generate_conversation_summary_with_astrixa(
 
 def run_execution_safety_agent(
     *,
-    connection: sqlite3.Connection,
+    connection: Any,
     structured: dict[str, Any],
     filter_decision: str,
     filter_reasons: list[str],
@@ -2264,7 +2061,7 @@ async def send_control_notification(
     NOTIFICATION_CALLS.labels(outcome="sent").inc()
 
 
-def vacancy_from_row(row: sqlite3.Row) -> VacancyRecord:
+def vacancy_from_row(row: dict[str, Any]) -> VacancyRecord:
     structured_data = json.loads(row["structured_json"])
     return VacancyRecord(
         id=row["id"],
@@ -2457,7 +2254,7 @@ async def create_vacancy_records(source_channel: str, recruiter_handle: str | No
 
 
 def record_approval_event(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     vacancy_id: str,
     action: str,
@@ -2483,7 +2280,7 @@ def record_approval_event(
 
 
 def record_dispatch_event(
-    connection: sqlite3.Connection,
+    connection: Any,
     *,
     vacancy_id: str,
     recruiter_handle: str | None,
@@ -2517,7 +2314,7 @@ def record_dispatch_event(
     )
 
 
-def is_legacy_row(row: sqlite3.Row) -> bool:
+def is_legacy_row(row: dict[str, Any]) -> bool:
     try:
         score_breakdown = json.loads(row["score_breakdown_json"])
     except Exception:
@@ -2551,7 +2348,7 @@ def is_legacy_row(row: sqlite3.Row) -> bool:
     return "agent_trace" not in context_bundle
 
 
-def backfill_vacancy_row(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
+def backfill_vacancy_row(connection: Any, row: dict[str, Any]) -> bool:
     if not is_legacy_row(row):
         return False
 
@@ -2673,6 +2470,16 @@ def readyz() -> dict[str, Any]:
         "service": "tg-outreach-api",
         "database_backend": database_backend_name(),
         "checks": checks,
+    }
+
+
+@app.get("/version")
+def version() -> dict[str, str]:
+    return {
+        "service": "tg-outreach-api",
+        "version": settings.build_version,
+        "git_sha": settings.git_sha,
+        "database_backend": database_backend_name(),
     }
 
 
@@ -2860,7 +2667,7 @@ def recruiter_overview(recruiter_handle: str) -> RecruiterOverview:
     entity_ids = [row["id"] for row in vacancy_rows]
     if conversation_row is not None:
         entity_ids.append(conversation_row["id"])
-    timeline_rows: list[sqlite3.Row] = []
+    timeline_rows: list[dict[str, Any]] = []
     if entity_ids:
         placeholders = ",".join("?" for _ in entity_ids)
         timeline_rows = connection.execute(

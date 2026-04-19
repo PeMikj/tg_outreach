@@ -53,4 +53,5 @@ Retriever реализован как библиотечный слой внут
 
 - `GET /healthz`
 - `GET /readyz`
+- `GET /version`
 - `GET /api/v1/config`

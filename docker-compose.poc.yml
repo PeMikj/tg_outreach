@@ -23,6 +23,8 @@ services:
       TG_OUTREACH_ASTRIXA_MODEL: ${TG_OUTREACH_ASTRIXA_MODEL:-mock-1}
       TG_OUTREACH_ASTRIXA_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-astrixa-dev-token}
       TG_OUTREACH_DATABASE_URL: ${TG_OUTREACH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/tg_outreach}
+      TG_OUTREACH_BUILD_VERSION: ${TG_OUTREACH_BUILD_VERSION:-dev}
+      TG_OUTREACH_GIT_SHA: ${TG_OUTREACH_GIT_SHA:-unknown}
       TG_OUTREACH_PROFILE_PATH: ${TG_OUTREACH_PROFILE_PATH:-/app/config/candidate_profile.json}
       TG_OUTREACH_PREFERENCES_PATH: ${TG_OUTREACH_PREFERENCES_PATH:-/app/config/candidate_preferences.json}
       TG_OUTREACH_USER_HEADLINE: ${TG_OUTREACH_USER_HEADLINE:-Senior Python/ML engineer focused on backend systems and MLOps}
@@ -66,6 +68,8 @@ services:
       TG_OUTREACH_ASTRIXA_MODEL: ${TG_OUTREACH_ASTRIXA_MODEL:-mock-1}
       TG_OUTREACH_ASTRIXA_TOKEN: ${ASTRIXA_GATEWAY_TOKEN:-astrixa-dev-token}
       TG_OUTREACH_DATABASE_URL: ${TG_OUTREACH_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/tg_outreach}
+      TG_OUTREACH_BUILD_VERSION: ${TG_OUTREACH_BUILD_VERSION:-dev}
+      TG_OUTREACH_GIT_SHA: ${TG_OUTREACH_GIT_SHA:-unknown}
       TG_OUTREACH_PROFILE_PATH: ${TG_OUTREACH_PROFILE_PATH:-/app/config/candidate_profile.json}
       TG_OUTREACH_PREFERENCES_PATH: ${TG_OUTREACH_PREFERENCES_PATH:-/app/config/candidate_preferences.json}
       TG_OUTREACH_USER_HEADLINE: ${TG_OUTREACH_USER_HEADLINE:-Senior Python/ML engineer focused on backend systems and MLOps}

@@ -123,6 +123,7 @@ make poc-up
 curl -sS http://127.0.0.1:18080/healthz
 curl -sS http://127.0.0.1:18100/healthz
 curl -sS http://127.0.0.1:18100/readyz
+curl -sS http://127.0.0.1:18100/version
 ```
 
 Ожидаемые ответы:
@@ -130,6 +131,7 @@ curl -sS http://127.0.0.1:18100/readyz
 - `{"status":"ok","service":"api-gateway"}`
 - `{"status":"ok","service":"tg-outreach-api"}`
 - `{"status":"ok","service":"tg-outreach-api","database_backend":"postgres",...}`
+- `{"service":"tg-outreach-api","version":"...","git_sha":"...","database_backend":"postgres"}`
 
 7. Открыть operator console:
 
@@ -184,6 +186,7 @@ make smoke
 
 - `GET /healthz`
 - `GET /readyz`
+- `GET /version`
 - `GET /metrics`
 - `GET /ui`
 - `GET /api/v1/config`
