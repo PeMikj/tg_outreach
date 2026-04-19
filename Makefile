@@ -7,7 +7,7 @@ astrixa-down:
 	docker compose --env-file .env -f vendor/astrixa/docker-compose.yml down
 
 poc-up:
-	docker compose --env-file .env -f docker-compose.poc.yml up -d --build
+	TG_OUTREACH_GIT_SHA=$$(git rev-parse --short HEAD) TG_OUTREACH_BUILD_VERSION=$$(git rev-parse --short HEAD) docker compose --env-file .env -f docker-compose.poc.yml up -d --build
 
 poc-down:
 	docker compose --env-file .env -f docker-compose.poc.yml down

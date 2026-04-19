@@ -124,6 +124,7 @@ curl -sS http://127.0.0.1:18080/healthz
 curl -sS http://127.0.0.1:18100/healthz
 curl -sS http://127.0.0.1:18100/readyz
 curl -sS http://127.0.0.1:18100/version
+curl -sS http://127.0.0.1:18100/api/v1/admin/runtime
 ```
 
 Ожидаемые ответы:
@@ -132,6 +133,7 @@ curl -sS http://127.0.0.1:18100/version
 - `{"status":"ok","service":"tg-outreach-api"}`
 - `{"status":"ok","service":"tg-outreach-api","database_backend":"postgres",...}`
 - `{"service":"tg-outreach-api","version":"...","git_sha":"...","database_backend":"postgres"}`
+- `{"worker":{"status":"ok",...},"secret_status":{"astrixa_token_configured":true,...},...}`
 
 7. Открыть operator console:
 
@@ -187,6 +189,7 @@ make smoke
 - `GET /healthz`
 - `GET /readyz`
 - `GET /version`
+- `GET /api/v1/admin/runtime`
 - `GET /metrics`
 - `GET /ui`
 - `GET /api/v1/config`

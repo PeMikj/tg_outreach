@@ -17,6 +17,7 @@ from app.main import (
     poll_telegram_replies_internal,
     schedule_job,
     send_control_notification,
+    set_control_state_value,
     settings,
     upsert_periodic_job,
 )
@@ -29,6 +30,23 @@ WORKER_ID = f"{socket.gethostname()}-outreach-worker"
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def publish_worker_heartbeat() -> None:
+    connection = get_db()
+    try:
+        set_control_state_value(
+            connection,
+            key="worker_heartbeat",
+            value={
+                "worker_id": WORKER_ID,
+                "poll_seconds": WORKER_POLL_SECONDS,
+                "lease_seconds": WORKER_LEASE_SECONDS,
+            },
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def lease_due_job():
@@ -268,6 +286,7 @@ async def main() -> None:
     connection.commit()
     connection.close()
     while True:
+        publish_worker_heartbeat()
         job = lease_due_job()
         if job is None:
             await asyncio.sleep(WORKER_POLL_SECONDS)

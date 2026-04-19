@@ -16,6 +16,9 @@ services:
   outreach-api:
     build:
       context: ./services/outreach-api
+      args:
+        TG_OUTREACH_BUILD_VERSION: ${TG_OUTREACH_BUILD_VERSION:-dev}
+        TG_OUTREACH_GIT_SHA: ${TG_OUTREACH_GIT_SHA:-unknown}
     ports:
       - "18100:8100"
     environment:
@@ -62,6 +65,9 @@ services:
   outreach-worker:
     build:
       context: ./services/outreach-api
+      args:
+        TG_OUTREACH_BUILD_VERSION: ${TG_OUTREACH_BUILD_VERSION:-dev}
+        TG_OUTREACH_GIT_SHA: ${TG_OUTREACH_GIT_SHA:-unknown}
     command: ["python", "-m", "app.worker"]
     environment:
       TG_OUTREACH_ASTRIXA_BASE_URL: ${TG_OUTREACH_ASTRIXA_BASE_URL:-http://api-gateway:8080}

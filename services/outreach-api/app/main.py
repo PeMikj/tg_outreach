@@ -92,6 +92,7 @@ class Settings:
     context_budget_tokens: int = int(os.getenv("TG_OUTREACH_CONTEXT_BUDGET_TOKENS", "3000"))
     approval_ttl_seconds: int = int(os.getenv("TG_OUTREACH_APPROVAL_TTL_SECONDS", "86400"))
     follow_up_delay_seconds: int = int(os.getenv("TG_OUTREACH_FOLLOW_UP_DELAY_SECONDS", "259200"))
+    worker_poll_seconds: int = int(os.getenv("TG_OUTREACH_WORKER_POLL_SECONDS", "15"))
     telegram_reply_poll_interval_seconds: int = int(os.getenv("TG_OUTREACH_TELEGRAM_REPLY_POLL_INTERVAL_SECONDS", "300"))
 
     @property
@@ -396,13 +397,53 @@ def load_sql_file(name: str) -> str:
     return (SQL_DIR / name).read_text(encoding="utf-8")
 
 
+def execute_sql_script(connection: Any, sql_script: str) -> None:
+    for statement in sql_script.split(";"):
+        normalized = statement.strip()
+        if not normalized:
+            continue
+        connection.execute(normalized)
+
+
+def ensure_schema_migrations_table(connection: Any) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )
+        """
+    )
+
+
+def get_applied_migrations(connection: Any) -> list[str]:
+    rows = connection.execute(
+        "SELECT version FROM schema_migrations ORDER BY version ASC"
+    ).fetchall()
+    return [str(row["version"]) for row in rows]
+
+
+def apply_sql_migrations(connection: Any) -> None:
+    ensure_schema_migrations_table(connection)
+    applied = set(get_applied_migrations(connection))
+    for path in sorted(SQL_DIR.glob("*.sql")):
+        version = path.name
+        if version in applied:
+            continue
+        execute_sql_script(connection, load_sql_file(version))
+        connection.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, utc_now()),
+        )
+
+
 CANDIDATE_PROFILE = load_json_file(settings.profile_path)
 CANDIDATE_PREFERENCES = load_json_file(settings.preferences_path)
 
 
 def initialize_db_schema(connection: Any) -> None:
     global DB_SCHEMA_INITIALIZED
-    connection.execute(load_sql_file("001_init.sql"))
+    apply_sql_migrations(connection)
     existing_columns = get_existing_columns(connection, "vacancies")
     if "score_breakdown_json" not in existing_columns:
         connection.execute("ALTER TABLE vacancies ADD COLUMN score_breakdown_json TEXT NOT NULL DEFAULT '{}'")
@@ -437,6 +478,29 @@ def database_backend_name() -> str:
     return "postgres"
 
 
+def get_control_state_value(connection: Any, key: str) -> tuple[dict[str, Any] | None, str | None]:
+    row = connection.execute(
+        "SELECT value_json, updated_at FROM control_state WHERE key = ?",
+        (key,),
+    ).fetchone()
+    if row is None:
+        return None, None
+    return json.loads(row["value_json"]), row["updated_at"]
+
+
+def set_control_state_value(connection: Any, *, key: str, value: dict[str, Any]) -> str:
+    updated_at = utc_now()
+    connection.execute(
+        """
+        INSERT INTO control_state (key, value_json, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+        """,
+        (key, json.dumps(value), updated_at),
+    )
+    return updated_at
+
+
 def log_audit(
     connection: Any,
     *,
@@ -466,14 +530,13 @@ def estimate_tokens(text: str) -> int:
 
 
 def get_emergency_stop_state(connection: Any) -> EmergencyStopState:
-    row = connection.execute("SELECT value_json, updated_at FROM control_state WHERE key = 'emergency_stop'").fetchone()
-    if row is None:
+    value, updated_at = get_control_state_value(connection, "emergency_stop")
+    if value is None:
         return EmergencyStopState(enabled=False, reason=None, updated_at=None, updated_by=None)
-    value = json.loads(row["value_json"])
     return EmergencyStopState(
         enabled=bool(value.get("enabled", False)),
         reason=value.get("reason"),
-        updated_at=row["updated_at"],
+        updated_at=updated_at,
         updated_by=value.get("updated_by"),
     )
 
@@ -485,20 +548,12 @@ def set_emergency_stop_state(
     operator: str,
     reason: str | None,
 ) -> EmergencyStopState:
-    updated_at = utc_now()
     payload = {
         "enabled": enabled,
         "reason": reason,
         "updated_by": operator,
     }
-    connection.execute(
-        """
-        INSERT INTO control_state (key, value_json, updated_at)
-        VALUES ('emergency_stop', ?, ?)
-        ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
-        """,
-        (json.dumps(payload), updated_at),
-    )
+    updated_at = set_control_state_value(connection, key="emergency_stop", value=payload)
     return EmergencyStopState(
         enabled=enabled,
         reason=reason,
@@ -2480,6 +2535,47 @@ def version() -> dict[str, str]:
         "version": settings.build_version,
         "git_sha": settings.git_sha,
         "database_backend": database_backend_name(),
+    }
+
+
+@app.get("/api/v1/admin/runtime")
+def admin_runtime() -> dict[str, Any]:
+    connection = get_db()
+    emergency_stop = get_emergency_stop_state(connection)
+    worker_heartbeat, worker_heartbeat_updated_at = get_control_state_value(connection, "worker_heartbeat")
+    applied_migrations = get_applied_migrations(connection)
+    connection.close()
+
+    heartbeat_age = age_seconds_from_iso(worker_heartbeat_updated_at)
+    heartbeat_status = "missing"
+    if heartbeat_age is not None:
+        heartbeat_status = "ok" if heartbeat_age <= (settings.worker_poll_seconds * 3) else "stale"
+
+    return {
+        "service": "tg-outreach-api",
+        "version": settings.build_version,
+        "git_sha": settings.git_sha,
+        "database_backend": database_backend_name(),
+        "dispatch_mode": settings.dispatch_mode,
+        "telegram_configured": bool(
+            settings.telegram_api_id and settings.telegram_api_hash and settings.telegram_session_string
+        ),
+        "secret_status": {
+            "astrixa_token_configured": bool(settings.astrixa_token),
+            "telegram_session_configured": bool(settings.telegram_session_string),
+            "smtp_configured": bool(settings.smtp_host and settings.smtp_from_email),
+        },
+        "worker": {
+            "worker_id": None if worker_heartbeat is None else worker_heartbeat.get("worker_id"),
+            "last_heartbeat_at": worker_heartbeat_updated_at,
+            "heartbeat_age_seconds": heartbeat_age,
+            "status": heartbeat_status,
+        },
+        "migrations": {
+            "applied_count": len(applied_migrations),
+            "applied_versions": applied_migrations,
+        },
+        "emergency_stop": emergency_stop.model_dump(),
     }
 
 

@@ -33,6 +33,7 @@ curl -sS http://127.0.0.1:18100/healthz
 curl -sS http://127.0.0.1:18100/readyz
 curl -sS http://127.0.0.1:18100/api/v1/config
 curl -sS http://127.0.0.1:18100/version
+curl -sS http://127.0.0.1:18100/api/v1/admin/runtime
 ```
 
 ## Replay / Eval
