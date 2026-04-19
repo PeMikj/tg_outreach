@@ -593,6 +593,70 @@ def age_seconds_from_iso(iso_timestamp: str | None) -> int | None:
     return max(0, int(delta.total_seconds()))
 
 
+def probe_astrixa_health() -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        response = httpx.get(f"{settings.astrixa_base_url}/healthz", timeout=3.0)
+        response.raise_for_status()
+        return {
+            "status": "ok",
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+        }
+    except httpx.HTTPError as exc:
+        return {
+            "status": "error",
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            "error_type": exc.__class__.__name__,
+        }
+
+
+def probe_astrixa_invoke() -> dict[str, Any]:
+    started = time.perf_counter()
+    headers = {
+        "authorization": f"Bearer {settings.astrixa_token}",
+        "content-type": "application/json",
+    }
+    payload = {
+        "model": settings.astrixa_model,
+        "messages": [{"role": "user", "content": "Reply with the single word ok."}],
+        "metadata": {
+            "project": "tg_outreach_poc",
+            "workflow": "dependency_probe",
+            "anonymization_mode": "off",
+            "anonymization_profile": "none",
+        },
+    }
+    try:
+        response = httpx.post(
+            f"{settings.astrixa_base_url}/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=min(settings.astrixa_timeout_seconds, 5.0),
+        )
+        response.raise_for_status()
+        data = response.json()
+        output_text = str(data.get("output_text", "")).strip()
+        if not output_text:
+            choices = data.get("choices")
+            if isinstance(choices, list) and choices:
+                first_choice = choices[0] or {}
+                message = first_choice.get("message") or {}
+                content = message.get("content")
+                if isinstance(content, str):
+                    output_text = content.strip()
+        return {
+            "status": "ok" if output_text else "degraded",
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            "response_present": bool(output_text),
+        }
+    except httpx.HTTPError as exc:
+        return {
+            "status": "error",
+            "latency_ms": int((time.perf_counter() - started) * 1000),
+            "error_type": exc.__class__.__name__,
+        }
+
+
 def conversation_from_row(row: dict[str, Any]) -> ConversationRecord:
     return ConversationRecord(
         id=row["id"],
@@ -2514,12 +2578,8 @@ def readyz() -> dict[str, Any]:
     finally:
         connection.close()
 
-    try:
-        response = httpx.get(f"{settings.astrixa_base_url}/healthz", timeout=3.0)
-        response.raise_for_status()
-        checks["astrixa"] = "ok"
-    except httpx.HTTPError:
-        checks["astrixa"] = "error"
+    astrixa_health = probe_astrixa_health()
+    checks["astrixa"] = str(astrixa_health["status"])
 
     status = "ok" if all(value == "ok" for value in checks.values()) else "degraded"
     return {
@@ -2578,6 +2638,29 @@ def admin_runtime() -> dict[str, Any]:
             "applied_versions": applied_migrations,
         },
         "emergency_stop": emergency_stop.model_dump(),
+    }
+
+
+@app.get("/api/v1/admin/dependencies")
+def admin_dependencies() -> dict[str, Any]:
+    connection = get_db()
+    connection.execute("SELECT 1")
+    applied_migrations = get_applied_migrations(connection)
+    connection.close()
+
+    return {
+        "service": "tg-outreach-api",
+        "database": {
+            "backend": database_backend_name(),
+            "status": "ok",
+            "applied_migrations": applied_migrations,
+        },
+        "astrixa": {
+            "base_url": settings.astrixa_base_url,
+            "model": settings.astrixa_model,
+            "health": probe_astrixa_health(),
+            "invoke_probe": probe_astrixa_invoke(),
+        },
     }
 
 

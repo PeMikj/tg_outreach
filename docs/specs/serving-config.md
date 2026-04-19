@@ -21,7 +21,7 @@ Retriever реализован как библиотечный слой внут
 - upstream provider/model/version inside Astrixa
 - retry and timeout budgets
 - rate limits and policy thresholds
-- local DB path
+- `TG_OUTREACH_DATABASE_URL`
 - observability endpoints
 
 ## Config Rules
@@ -55,4 +55,5 @@ Retriever реализован как библиотечный слой внут
 - `GET /readyz`
 - `GET /version`
 - `GET /api/v1/admin/runtime`
+- `GET /api/v1/admin/dependencies`
 - `GET /api/v1/config`

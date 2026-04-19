@@ -125,6 +125,7 @@ curl -sS http://127.0.0.1:18100/healthz
 curl -sS http://127.0.0.1:18100/readyz
 curl -sS http://127.0.0.1:18100/version
 curl -sS http://127.0.0.1:18100/api/v1/admin/runtime
+curl -sS http://127.0.0.1:18100/api/v1/admin/dependencies
 ```
 
 Ожидаемые ответы:
@@ -134,6 +135,7 @@ curl -sS http://127.0.0.1:18100/api/v1/admin/runtime
 - `{"status":"ok","service":"tg-outreach-api","database_backend":"postgres",...}`
 - `{"service":"tg-outreach-api","version":"...","git_sha":"...","database_backend":"postgres"}`
 - `{"worker":{"status":"ok",...},"secret_status":{"astrixa_token_configured":true,...},...}`
+- `{"database":{"status":"ok",...},"astrixa":{"health":{"status":"ok",...},"invoke_probe":{"status":"ok|degraded|error",...}}}`
 
 7. Открыть operator console:
 
@@ -168,6 +170,7 @@ make status
 make smoke
 make security-check
 make verify
+make migrate
 curl -sS http://127.0.0.1:18100/api/v1/config
 curl -sS http://127.0.0.1:18100/api/v1/ops/summary
 curl -sS http://127.0.0.1:18100/api/v1/jobs
@@ -180,6 +183,7 @@ curl -sS http://127.0.0.1:18100/api/v1/jobs
 - `smoke` создает новую test vacancy и подтверждает `created_count > 0`;
 - `security-check` подтверждает, что tracked files не содержат очевидных секретов;
 - `verify` прогоняет compile check, secret hygiene check и smoke check;
+- `migrate` явно выводит applied SQL migrations;
 - конфиг читается;
 - `ops/summary` возвращает агрегаты;
 - `ops/summary` показывает `generation_sources` и `fallback_generations` для контроля деградации generation path;
