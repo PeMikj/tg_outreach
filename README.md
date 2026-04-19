@@ -165,6 +165,9 @@ make demo
 ```bash
 make health
 make status
+make smoke
+make security-check
+make verify
 curl -sS http://127.0.0.1:18100/api/v1/config
 curl -sS http://127.0.0.1:18100/api/v1/ops/summary
 curl -sS http://127.0.0.1:18100/api/v1/jobs
@@ -174,8 +177,12 @@ curl -sS http://127.0.0.1:18100/api/v1/jobs
 
 - API отвечает без `5xx`;
 - `readyz` подтверждает `database=ok` и `astrixa=ok`;
+- `smoke` создает новую test vacancy и подтверждает `created_count > 0`;
+- `security-check` подтверждает, что tracked files не содержат очевидных секретов;
+- `verify` прогоняет compile check, secret hygiene check и smoke check;
 - конфиг читается;
 - `ops/summary` возвращает агрегаты;
+- `ops/summary` показывает `generation_sources` и `fallback_generations` для контроля деградации generation path;
 - worker создает и обрабатывает фоновые jobs.
 
 Быстрый smoke test:

@@ -74,6 +74,8 @@
   - recruiter status distribution
   - conversation status distribution
   - contact extraction status/reason distribution
+  - generation source distribution
+  - fallback generation count
 - `GET /api/v1/ops/failed-jobs`
   - recent failed jobs
   - attempts / max_attempts

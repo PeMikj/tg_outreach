@@ -1,4 +1,4 @@
-.PHONY: astrixa-up astrixa-down poc-up poc-down demo eval-replay health status smoke
+.PHONY: astrixa-up astrixa-down poc-up poc-down demo eval-replay health status smoke security-check verify
 
 astrixa-up:
 	docker compose --env-file .env -f vendor/astrixa/docker-compose.yml up -d --build
@@ -13,9 +13,10 @@ poc-down:
 	docker compose --env-file .env -f docker-compose.poc.yml down
 
 demo:
+	DEMO_ID=$$(date +%s); \
 	curl -sS -X POST http://127.0.0.1:18100/api/v1/vacancies/ingest \
 		-H 'content-type: application/json' \
-		-d '{"source_channel":"@jobs","recruiter_handle":"@recruiter","vacancy_text":"Senior Python Backend Engineer. Docker, FastAPI, PostgreSQL, observability, LLM integrations. Remote."}'
+		-d "{\"source_channel\":\"@jobs-$$DEMO_ID\",\"recruiter_handle\":\"@recruiter_$$DEMO_ID\",\"vacancy_text\":\"Senior Python Backend Engineer. Docker, FastAPI, PostgreSQL, observability, LLM integrations. Remote. Demo $$DEMO_ID.\"}"
 
 eval-replay:
 	docker compose --env-file .env -f docker-compose.poc.yml exec -T outreach-api python -m app.replay_eval
@@ -31,6 +32,17 @@ status:
 smoke:
 	curl -sS http://127.0.0.1:18080/healthz
 	curl -sS http://127.0.0.1:18100/readyz
-	curl -sS -X POST http://127.0.0.1:18100/api/v1/vacancies/ingest \
+	SMOKE_ID=$$(date +%s); \
+	RESPONSE=$$(curl -sS -X POST http://127.0.0.1:18100/api/v1/vacancies/ingest \
 		-H 'content-type: application/json' \
-		-d '{"source_channel":"@smoke","recruiter_handle":"@smoke_hr","vacancy_text":"Senior Python Backend Engineer. Docker, FastAPI, PostgreSQL, observability, LLM integrations. Remote."}'
+		-d "{\"source_channel\":\"@smoke-$$SMOKE_ID\",\"recruiter_handle\":\"@smoke_hr_$$SMOKE_ID\",\"vacancy_text\":\"Senior Python Backend Engineer. Docker, FastAPI, PostgreSQL, observability, LLM integrations. Remote. Smoke $$SMOKE_ID.\"}"); \
+	echo "$$RESPONSE"; \
+	echo "$$RESPONSE" | grep -q '"created_count":[1-9]'
+
+security-check:
+	python3 scripts/check_secret_hygiene.py
+
+verify:
+	python3 -m py_compile scripts/check_secret_hygiene.py services/outreach-api/app/main.py services/outreach-api/app/worker.py services/outreach-api/app/replay_eval.py
+	$(MAKE) security-check
+	$(MAKE) smoke

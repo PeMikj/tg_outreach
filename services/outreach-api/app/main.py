@@ -359,6 +359,8 @@ class OpsSummary(BaseModel):
     conversations_by_status: dict[str, int]
     contact_extraction_by_status: dict[str, int]
     contact_extraction_by_reason: dict[str, int]
+    generation_sources: dict[str, int]
+    fallback_generations: int
 
 
 class TimelineEventRecord(BaseModel):
@@ -3041,7 +3043,7 @@ def ops_summary() -> OpsSummary:
     job_rows = connection.execute("SELECT * FROM jobs").fetchall()
     recruiter_rows = connection.execute("SELECT * FROM recruiters").fetchall()
     conversation_rows = connection.execute("SELECT * FROM conversations").fetchall()
-    vacancy_rows = connection.execute("SELECT structured_json FROM vacancies").fetchall()
+    vacancy_rows = connection.execute("SELECT structured_json, draft_source FROM vacancies").fetchall()
     connection.close()
 
     jobs_by_status: dict[str, int] = {}
@@ -3084,12 +3086,18 @@ def ops_summary() -> OpsSummary:
 
     contact_extraction_by_status: dict[str, int] = {}
     contact_extraction_by_reason: dict[str, int] = {}
+    generation_sources: dict[str, int] = {}
+    fallback_generations = 0
     for row in vacancy_rows:
         structured = json.loads(row["structured_json"] or "{}")
         extraction_status = str(structured.get("contact_extraction_status") or "unknown")
         extraction_reason = str(structured.get("contact_extraction_reason") or "unknown")
+        draft_source = str(row["draft_source"] or "unknown")
         contact_extraction_by_status[extraction_status] = contact_extraction_by_status.get(extraction_status, 0) + 1
         contact_extraction_by_reason[extraction_reason] = contact_extraction_by_reason.get(extraction_reason, 0) + 1
+        generation_sources[draft_source] = generation_sources.get(draft_source, 0) + 1
+        if draft_source.startswith("fallback:"):
+            fallback_generations += 1
 
     return OpsSummary(
         total_jobs=len(job_rows),
@@ -3106,6 +3114,8 @@ def ops_summary() -> OpsSummary:
         conversations_by_status=conversations_by_status,
         contact_extraction_by_status=contact_extraction_by_status,
         contact_extraction_by_reason=contact_extraction_by_reason,
+        generation_sources=generation_sources,
+        fallback_generations=fallback_generations,
     )
 
 
