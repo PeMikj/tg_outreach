@@ -189,6 +189,7 @@ curl -sS http://127.0.0.1:18100/api/v1/jobs
 - `migrate` явно выводит applied SQL migrations;
 - `preflight` прогоняет verify, migrate, version, runtime и dependency probes;
 - `test` запускает минимальные regression tests для runtime validation, migrate command и `ops/summary`;
+- `test` также покрывает contract для `security-check`;
 - `cleanup-demo-data` удаляет demo/smoke записи и связанные test artifacts из runtime storage;
 - конфиг читается;
 - `ops/summary` возвращает агрегаты;

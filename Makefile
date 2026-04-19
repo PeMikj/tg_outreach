@@ -49,7 +49,7 @@ security-check:
 	python3 scripts/check_secret_hygiene.py
 
 verify:
-	python3 -m py_compile scripts/check_secret_hygiene.py services/outreach-api/app/main.py services/outreach-api/app/worker.py services/outreach-api/app/replay_eval.py services/outreach-api/tests/test_runtime_contracts.py
+	python3 -m py_compile scripts/check_secret_hygiene.py services/outreach-api/app/main.py services/outreach-api/app/worker.py services/outreach-api/app/replay_eval.py services/outreach-api/tests/test_runtime_contracts.py tests/test_secret_hygiene.py
 	$(MAKE) security-check
 	$(MAKE) smoke
 
@@ -61,4 +61,5 @@ preflight:
 	curl -sS http://127.0.0.1:18100/api/v1/admin/dependencies
 
 test:
+	python3 -m unittest tests.test_secret_hygiene -v
 	docker compose --env-file .env -f docker-compose.poc.yml exec -T outreach-api python -m unittest discover -s tests -v
